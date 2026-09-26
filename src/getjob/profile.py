@@ -1,14 +1,18 @@
-"""Search profile: what kind of job to look for, loaded from `config/search.yaml`."""
+"""Search profile: what kind of job to look for, loaded from `config/search.yaml`.
+
+Every collector already searches 서울 · 신입 (incl. 경력무관) · 정규직 using each site's
+own filters; the settings here narrow those results further.
+"""
 
 from pathlib import Path
 from typing import Literal
 
 import yaml
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from getjob.models import Job, normalize
 from getjob.sources import SOURCES
 
-EmploymentType = Literal["정규직", "계약직", "인턴", "파견직"]
 NotifyChannel = Literal["telegram", "email"]
 
 
@@ -17,19 +21,11 @@ class _Strict(BaseModel):
 
 
 class Location(_Strict):
-    city: str = "서울"
     districts: list[str] = Field(default_factory=list)
 
 
-class Experience(_Strict):
-    min_years: int = Field(0, ge=0)
-    max_years: int | None = Field(None, ge=0)
-
-    @model_validator(mode="after")
-    def _check_range(self) -> "Experience":
-        if self.max_years is not None and self.max_years < self.min_years:
-            raise ValueError("experience.max_years must be >= min_years")
-        return self
+class Limits(_Strict):
+    max_per_source: int = Field(300, ge=1)
 
 
 class SourceToggle(_Strict):
@@ -43,12 +39,10 @@ class Notify(_Strict):
 
 class SearchProfile(_Strict):
     location: Location = Field(default_factory=Location)
-    employment_types: list[EmploymentType] = Field(default_factory=lambda: ["정규직"])
-    keywords: list[str] = Field(min_length=1)
+    keywords: list[str] = Field(default_factory=list)
     exclude_keywords: list[str] = Field(default_factory=list)
-    experience: Experience = Field(default_factory=Experience)
-    salary_min_manwon: int | None = Field(None, ge=0)
     exclude_companies: list[str] = Field(default_factory=list)
+    limits: Limits = Field(default_factory=Limits)
     sources: dict[str, SourceToggle] = Field(default_factory=dict)
     notify: Notify = Field(default_factory=Notify)
 
@@ -69,6 +63,22 @@ class SearchProfile(_Strict):
 
     def enabled_sources(self) -> list[str]:
         return [key for key, toggle in self.sources.items() if toggle.enabled]
+
+    def accepts(self, job: Job) -> bool:
+        title = job.title.lower()
+        if self.keywords:
+            searchable = " ".join([title, *job.tags]).lower()
+            if not any(k.lower() in searchable for k in self.keywords):
+                return False
+        if any(k.lower() in title for k in self.exclude_keywords):
+            return False
+        company = normalize(job.company)
+        if any(normalize(c) and normalize(c) in company for c in self.exclude_companies):
+            return False
+        # A location without a district (e.g. "서울", "서울 외") might still be in one.
+        if self.location.districts and "구" in job.location:
+            return any(d in job.location for d in self.location.districts)
+        return True
 
 
 def load_profile(path: Path) -> SearchProfile:

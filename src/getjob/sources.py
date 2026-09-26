@@ -46,15 +46,17 @@ SOURCES: dict[str, SourceInfo] = {
             "wanted", "원티드 Wanted", "https://www.wanted.co.kr", "https://www.wanted.co.kr/wdlist"
         ),
         SourceInfo(
-            "incruit", "인크루트 Incruit", "https://www.incruit.com", "https://www.incruit.com"
+            "incruit",
+            "인크루트 Incruit",
+            "https://www.incruit.com",
+            "https://m.incruit.com/jobdb_list/searchjob.asp",
         ),
         SourceInfo(
             "work24",
             "고용24 Work24",
             "https://www.work24.go.kr",
             "https://www.work24.go.kr/cm/main.do",
-            api_key_env="WORK24_API_KEY",
-            note="government job board (구 워크넷); official Open API",
+            note="government job board (구 워크넷)",
         ),
         SourceInfo(
             "remember",

@@ -25,4 +25,3 @@ jobs:
           SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
           NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
           SARAMIN_API_KEY: ${{ secrets.SARAMIN_API_KEY }}
-          WORK24_API_KEY: ${{ secrets.WORK24_API_KEY }}

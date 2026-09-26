@@ -37,7 +37,6 @@ class Settings(BaseSettings):
     notify_email_to: str | None = None
 
     saramin_api_key: SecretStr | None = None
-    work24_api_key: SecretStr | None = None
 
     @property
     def telegram_ready(self) -> bool:

@@ -62,9 +62,9 @@ class Doctor:
             return None
 
         districts = ", ".join(profile.location.districts) or "전체"
-        self._ok(f"location: {profile.location.city} ({districts})")
-        self._ok(f"employment: {', '.join(profile.employment_types)}")
-        self._ok(f"keywords: {', '.join(profile.keywords)}")
+        self._ok(f"searching: 서울 ({districts}) · 신입 (경력무관 포함) · 정규직")
+        self._ok(f"keywords: {', '.join(profile.keywords) or '(none - every posting)'}")
+        self._ok(f"newest postings per site per run: {profile.limits.max_per_source}")
         enabled = profile.enabled_sources()
         if enabled:
             self._ok(f"sources: {', '.join(enabled)}")

@@ -1,34 +1,26 @@
 # 검색 조건 / Search profile
-# Edit this file to describe the job you want. Each site adapter translates
-# these generic values into that site's own filters.
+#
+# Every site is searched for 서울 · 신입 (경력무관 포함) · 정규직 using that site's own
+# filters. The settings below narrow those results further.
 
 location:
-  city: 서울
-  # Leave empty for all of Seoul, or narrow it down, e.g. [강남구, 서초구, 영등포구]
+  # Leave empty for all of Seoul, or list districts, e.g. [강남구, 서초구, 영등포구]
   districts: []
 
-# 정규직 = regular full-time. Other values: 계약직, 인턴, 파견직
-employment_types: [정규직]
+# Only keep postings whose title (or tags) contain one of these words.
+# Empty = keep every posting. Example: [마케팅, 회계, 백엔드, backend]
+keywords: []
 
-# Job keywords (OR). EXAMPLES ONLY - replace with your own role, in Korean and English.
-keywords:
-  - 백엔드
-  - backend
-
-# Postings whose title contains any of these are skipped.
-exclude_keywords: [인턴, 계약직, 파견, 아르바이트, 알바]
-
-experience:
-  min_years: 0
-  # null = no upper limit
-  max_years: null
-
-# Minimum annual salary in 만원 (e.g. 4000 = 4,000만원). null = don't filter.
-# Many postings say "회사내규에 따름", so those are always kept.
-salary_min_manwon: null
+# Drop postings whose title contains any of these.
+exclude_keywords: [계약직, 파견, 아르바이트, 알바, 단기]
 
 # Companies you never want to see.
 exclude_companies: []
+
+limits:
+  # Newest postings to read per site on each run. Runs stop earlier once they reach
+  # postings already seen. Use `getjob collect --all` once to read every posting.
+  max_per_source: 300
 
 # Which sites to search. Turn a site on or off with `enabled`.
 sources:
@@ -39,9 +31,9 @@ sources:
   incruit:     {enabled: true}   # 인크루트
   work24:      {enabled: true}   # 고용24 (구 워크넷)
   remember:    {enabled: true}   # 리멤버 커리어
-  jumpit:      {enabled: false}  # 점핏 - IT/개발 직군 전용
-  peoplenjob:  {enabled: false}  # 피플앤잡 - 외국계 기업
-  alio:        {enabled: false}  # 잡알리오 - 공공기관
+  jumpit:      {enabled: true}   # 점핏 - IT/개발 직군
+  peoplenjob:  {enabled: true}   # 피플앤잡 - 외국계 기업
+  alio:        {enabled: true}   # 잡알리오 - 공공기관
 
 notify:
   # Channels to use; each needs its secrets in .env (see .env.example)

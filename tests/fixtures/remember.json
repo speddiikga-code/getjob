@@ -1,0 +1,62 @@
+{
+ "data": [
+  {
+   "id": 328112,
+   "title": "[올릿] 홍콩/대만 자사몰 AMD",
+   "addresses": [
+    {
+     "address_level1": "서울특별시",
+     "address_level2": "구로구"
+    }
+   ],
+   "min_experience": null,
+   "max_experience": 1,
+   "starts_at": "2026-07-21T13:00:00.000+09:00",
+   "ends_at": null,
+   "explicit_due": false,
+   "organization": {
+    "name": "(주)올릿리테일"
+   }
+  },
+  {
+   "id": 322737,
+   "title": "게임 3D 디자이너 (전환형 인턴)",
+   "addresses": [
+    {
+     "address_level1": "서울특별시",
+     "address_level2": "송파구"
+    }
+   ],
+   "min_experience": null,
+   "max_experience": 1,
+   "starts_at": "2026-06-26T00:00:00.000+09:00",
+   "ends_at": null,
+   "explicit_due": false,
+   "organization": {
+    "name": "슈퍼센트(주)"
+   }
+  },
+  {
+   "id": 320586,
+   "title": "로우클래식 직영매장 세일즈 직원",
+   "addresses": [
+    {
+     "address_level1": "서울특별시",
+     "address_level2": "중구"
+    },
+    {
+     "address_level1": "서울특별시",
+     "address_level2": "성동구"
+    }
+   ],
+   "min_experience": 0,
+   "max_experience": 5,
+   "starts_at": "2026-06-17T00:00:00.000+09:00",
+   "ends_at": null,
+   "explicit_due": false,
+   "organization": {
+    "name": "(주)로우클래식"
+   }
+  }
+ ]
+}

@@ -1,0 +1,71 @@
+{
+ "result": {
+  "positions": [
+   {
+    "id": 55090664,
+    "title": "콘텐츠 플랫폼 백엔드 개발(신입)",
+    "companyName": "드림어스컴퍼니",
+    "locations": [
+     "서울 강남구"
+    ],
+    "techStacks": [
+     "Elasticsearch",
+     "Java",
+     "Kafka",
+     "Kotlin",
+     "MongoDB",
+     "MySQL",
+     "RabbitMQ",
+     "Golang",
+     "FFMPEG"
+    ],
+    "minCareer": 0,
+    "maxCareer": 0,
+    "newcomer": true,
+    "alwaysOpen": false,
+    "closedAt": "2026-10-22T23:59:59"
+   },
+   {
+    "id": 55100806,
+    "title": "R&D 부문 신입사원 채용",
+    "companyName": "스타마타",
+    "locations": [
+     "서울 강남구"
+    ],
+    "techStacks": [
+     "C",
+     "C++",
+     "Linux",
+     "Python",
+     "DeepLearning",
+     "AI/인공지능",
+     "Embedded",
+     "SW",
+     "VR",
+     "AR"
+    ],
+    "minCareer": 0,
+    "maxCareer": 0,
+    "newcomer": true,
+    "alwaysOpen": false,
+    "closedAt": "2026-10-21T23:59:59"
+   },
+   {
+    "id": 55091211,
+    "title": "사내 시스템 운영 담당자",
+    "companyName": "드림어스컴퍼니",
+    "locations": [
+     "서울 강남구"
+    ],
+    "techStacks": [
+     "ISMS"
+    ],
+    "minCareer": 0,
+    "maxCareer": 0,
+    "newcomer": true,
+    "alwaysOpen": false,
+    "closedAt": "2026-10-20T23:59:59"
+   }
+  ]
+ }
+}

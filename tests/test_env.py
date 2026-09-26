@@ -14,11 +14,9 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def test_shipped_profile_is_valid():
     profile = load_profile(ROOT / "config" / "search.yaml")
-    assert profile.location.city == "서울"
-    assert profile.employment_types == ["정규직"]
-    assert set(profile.sources) <= set(SOURCES)
-    assert "linkedin" in profile.enabled_sources()
-    assert "jobkorea" in profile.enabled_sources()
+    assert profile.keywords == []
+    assert set(profile.sources) == set(SOURCES)
+    assert profile.enabled_sources() == list(SOURCES)
 
 
 def test_profile_rejects_unknown_source():
@@ -26,9 +24,9 @@ def test_profile_rejects_unknown_source():
         SearchProfile.model_validate({"keywords": ["x"], "sources": {"monster": {}}})
 
 
-def test_profile_requires_keywords():
+def test_profile_rejects_unknown_settings():
     with pytest.raises(ValidationError):
-        SearchProfile.model_validate({"keywords": []})
+        SearchProfile.model_validate({"keyword": ["typo"]})
 
 
 def test_empty_env_values_mean_not_set(monkeypatch):

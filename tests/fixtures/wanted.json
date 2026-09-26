@@ -1,0 +1,49 @@
+{
+ "data": [
+  {
+   "id": 369219,
+   "position": "Account Manager (고객전략/법인영업)",
+   "company": {
+    "name": "고위드"
+   },
+   "address": {
+    "country": "한국",
+    "location": "서울",
+    "district": "강남구"
+   },
+   "annual_from": 0,
+   "annual_to": 10,
+   "employment_type": "regular"
+  },
+  {
+   "id": 388080,
+   "position": "프로덕트 마케팅 매니저",
+   "company": {
+    "name": "더스윙"
+   },
+   "address": {
+    "country": "한국",
+    "location": "서울",
+    "district": "종로구"
+   },
+   "annual_from": 0,
+   "annual_to": 10,
+   "employment_type": "regular"
+  },
+  {
+   "id": 278592,
+   "position": "[인턴] [B2C Part] 에듀테크 CEO Staff/PM",
+   "company": {
+    "name": "한국교육파트너스"
+   },
+   "address": {
+    "country": "한국",
+    "location": "서울",
+    "district": "마포구"
+   },
+   "annual_from": 0,
+   "annual_to": 1,
+   "employment_type": "intern"
+  }
+ ]
+}
