@@ -1,0 +1,28 @@
+# Checks the cloud environment: config valid, secrets present, and every job site
+# reachable from GitHub's runners. Run it from the Actions tab ("Run workflow").
+# The scheduled job search (08:00 / 18:00 KST) is added once the site collectors exist.
+name: Cloud environment check
+
+on:
+  workflow_dispatch:
+
+jobs:
+  doctor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+      - run: pip install .
+      - run: getjob doctor --all-sources
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          NOTIFY_EMAIL_TO: ${{ secrets.NOTIFY_EMAIL_TO }}
+          SARAMIN_API_KEY: ${{ secrets.SARAMIN_API_KEY }}
+          WORK24_API_KEY: ${{ secrets.WORK24_API_KEY }}
