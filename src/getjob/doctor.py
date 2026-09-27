@@ -10,7 +10,7 @@ import yaml
 from pydantic import ValidationError
 
 from getjob.apply.config import load_apply_profile, load_experience
-from getjob.apply.drafter import claude_available
+from getjob.apply.drafter import claude_available, resolve_engine
 from getjob.profile import SearchProfile, load_profile
 from getjob.settings import Settings
 from getjob.sources import SOURCES
@@ -138,10 +138,15 @@ class Doctor:
                 self._fail(f"invalid {experience}: {e}")
             else:
                 self._ok(f"experience bank: {len(bank.episodes)} episode(s)")
-        claude = claude_available(self.settings.anthropic_key)
-        self._status("ANTHROPIC_API_KEY + anthropic SDK (Claude drafts, optional)", claude)
-        engine = "claude" if claude and profile.drafting.engine != "template" else "template"
-        self._ok(f"draft engine: {engine}")
+        key = self.settings.anthropic_key
+        self._status(
+            "ANTHROPIC_API_KEY + anthropic SDK (Claude drafts, optional)", claude_available(key)
+        )
+        engine = resolve_engine(profile.drafting.engine, key)
+        if engine is None:
+            self._fail("drafting.engine is 'claude' but ANTHROPIC_API_KEY or the SDK is missing")
+        else:
+            self._ok(f"draft engine: {engine}")
 
     def _check_sites(self, keys: list[str]) -> None:
         self._section("Job sites reachable from this machine")

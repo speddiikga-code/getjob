@@ -5,6 +5,7 @@ from dataclasses import asdict
 from datetime import date, datetime
 from pathlib import Path
 
+from getjob import clock
 from getjob.models import Job
 
 SCHEMA = """
@@ -56,7 +57,7 @@ class Store:
         A posting already stored from another site (same company and title) is saved
         but not returned again, so the same job listed on 사람인 and 고용24 is reported once.
         """
-        now = datetime.now().isoformat(timespec="seconds")
+        now = clock.now().isoformat(timespec="seconds")
         fingerprints = {row[0] for row in self.db.execute("SELECT fingerprint FROM jobs")}
         new: list[Job] = []
         with self.db:

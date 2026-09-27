@@ -21,14 +21,16 @@ import yaml
 
 from getjob.apply.config import Episode, Experience, QuestionSpec
 from getjob.deadline import Deadline
-from getjob.models import Job, normalize
+from getjob.models import Job, normalize, strip_legal
 
 QUESTIONS_FILE = "questions.txt"
 DRAFT_FILE = "자기소개서.md"
 PROMPT_FILE = "prompt.md"
+PREVIOUS_DRAFT_FILE = "자기소개서.prev.md"
 PLACEHOLDER = re.compile(r"\[(?:확인|작성) 필요[^\]]*\]")
-_LIMIT_SUFFIX = re.compile(r"\s*[(\[]\s*(\d{2,4})\s*자[^)\]]*[)\]]\s*$")
-_SENTENCE_END = re.compile(r"(?<=[다요음함됨\.!?])\s")
+_TRAILING_NOTE = re.compile(r"\s*[(\[]([^()\[\]]*)[)\]]\s*$")
+_CHARS = re.compile(r"(\d+)\s*자")
+_SENTENCE_END = re.compile(r"(?<=[.!?])[\"'”’)\]]*\s")
 _WORD = re.compile(r"[0-9A-Za-z가-힣+#]{2,}")
 
 
@@ -68,29 +70,55 @@ class Draft:
         placeholders = sum(len(PLACEHOLDER.findall(a.body)) for a in self.answers)
         if placeholders:
             out.append(f"[확인 필요]·[작성 필요] {placeholders}곳 채우기")
-        text = normalize(" ".join(a.body for a in self.answers))
-        own = normalize(company)
+        text = " ".join(a.body for a in self.answers)
+        own = strip_legal(company)
+        if own:  # the company applied to may contain a shorter name, e.g. SK in SK하이닉스
+            text = re.sub(re.escape(own), " ", text, flags=re.IGNORECASE)
         wrong = sorted(
-            {c for c in other_companies if (n := normalize(c)) and n != own and n in text}
+            {
+                c
+                for c in other_companies
+                if (n := normalize(c)) and n not in normalize(company) and mentions(c, text)
+            }
         )
         if wrong:
             out.append(f"다른 회사 이름이 들어 있음: {', '.join(wrong)}")
         return out
 
 
+def mentions(company: str, text: str) -> bool:
+    """Whether `text` names `company`. Short or Latin names must stand as a word,
+    so `LG` isn't found in `algorithm` (Korean particles may follow: `LG에서`)."""
+    core = strip_legal(company)
+    name = normalize(core)
+    if not name:
+        return False
+    if len(name) > 3 and not name.isascii():
+        return name in normalize(text)
+    words = r"\s*".join(re.escape(w) for w in core.split())
+    return (
+        re.search(rf"(?<![0-9A-Za-z가-힣]){words}(?![0-9A-Za-z])", text, re.IGNORECASE) is not None
+    )
+
+
 # --- questions --------------------------------------------------------------------
 
 
 def parse_questions(text: str, default_limit: int = 700) -> list[QuestionSpec]:
-    """One question per line; a trailing `(700자)` sets its limit. `#` lines are comments."""
+    """One question per line; `#` lines are comments.
+
+    A trailing note sets the limit, written the ways application forms do: `(700자)`,
+    `[800자 이내]`, `(공백 포함 1,000자 이내)`, `(최소 300자, 최대 1000자)`, `(500~1000자)`.
+    """
     questions = []
     for line in text.splitlines():
         line = line.strip()
         if not line or line.startswith("#"):
             continue
         limit = default_limit
-        if m := _LIMIT_SUFFIX.search(line):
-            limit, line = int(m[1]), line[: m.start()].strip()
+        note = _TRAILING_NOTE.search(line)
+        if note and (numbers := _CHARS.findall(note[1].replace(",", ""))):
+            limit, line = max(map(int, numbers)), line[: note.start()].strip()
         questions.append(QuestionSpec(text=line, limit=limit))
     return questions
 
@@ -186,6 +214,15 @@ def claude_available(api_key: str | None) -> bool:
     return bool(api_key) and importlib.util.find_spec("anthropic") is not None
 
 
+def resolve_engine(choice: str, api_key: str | None) -> str | None:
+    """The engine to use for `drafting.engine`; None when 'claude' is required but not set up."""
+    if choice == "template":
+        return "template"
+    if claude_available(api_key):
+        return "claude"
+    return "template" if choice == "auto" else None
+
+
 def draft_with_claude(
     job: Job,
     deadline: Deadline,
@@ -202,32 +239,37 @@ def draft_with_claude(
             raise DraftError("the Claude engine needs: pip install 'getjob[ai]'") from e
         client = anthropic.Anthropic(api_key=api_key)
 
-    response = client.beta.messages.create(
-        model=model,
-        max_tokens=16000,
-        # Rules and your experience bank are identical for every posting: cache them.
-        system=[
-            {"type": "text", "text": SYSTEM_PROMPT},
-            {
-                "type": "text",
-                "text": experience_block(experience),
-                "cache_control": {"type": "ephemeral"},
+    try:
+        response = client.beta.messages.create(
+            model=model,
+            max_tokens=16000,
+            # Rules and your experience bank are identical for every posting: cache them.
+            system=[
+                {"type": "text", "text": SYSTEM_PROMPT},
+                {
+                    "type": "text",
+                    "text": experience_block(experience),
+                    "cache_control": {"type": "ephemeral"},
+                },
+            ],
+            messages=[{"role": "user", "content": posting_block(job, deadline, questions)}],
+            thinking={"type": "adaptive"},
+            output_config={
+                "effort": "high",
+                "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA},
             },
-        ],
-        messages=[{"role": "user", "content": posting_block(job, deadline, questions)}],
-        thinking={"type": "adaptive"},
-        output_config={
-            "effort": "high",
-            "format": {"type": "json_schema", "schema": OUTPUT_SCHEMA},
-        },
-        # If a safety classifier declines, retry on Anthropic's recommended fallback model.
-        betas=["server-side-fallback-2026-07-01"],
-        fallbacks="default",
-    )
+            # If a safety classifier declines, retry on Anthropic's recommended fallback model.
+            betas=["server-side-fallback-2026-07-01"],
+            fallbacks="default",
+        )
+    except _api_errors() as e:
+        # Network, key, rate limit, unknown model...: fail this posting, not the whole run.
+        detail = getattr(e, "message", "") or str(e)
+        raise DraftError(f"Claude API error ({type(e).__name__}): {detail}") from e
     if response.stop_reason == "refusal":
-        raise DraftError("Claude declined to draft this posting; use --engine template")
+        raise DraftError("Claude declined to draft this posting")
     if response.stop_reason == "max_tokens":
-        raise DraftError("Claude's answer was cut off (max_tokens); try again")
+        raise DraftError("Claude's answer was cut off (max_tokens)")
     text = next((b.text for b in response.content if b.type == "text"), "")
     try:
         data = json.loads(text)
@@ -238,6 +280,14 @@ def draft_with_claude(
         Answer(q, bodies.get(i, "[작성 필요: 답이 비어 있음]")) for i, q in enumerate(questions, 1)
     ]
     return Draft("claude", answers, [t for t in data.get("todo", []) if t.strip()])
+
+
+def _api_errors() -> tuple[type[Exception], ...]:
+    try:
+        import anthropic
+    except ImportError:
+        return ()
+    return (anthropic.APIError,)
 
 
 # Question kinds, matched by words in the question text.
@@ -259,19 +309,14 @@ _BRIDGE = {
     "competence": "이렇게 쌓은 역량을 실무에 바로 적용해 빠르게 제 몫을 해내겠습니다.",
     "growth": "이 경험에서 세운 기준을 지키며 꾸준히 성장하는 구성원이 되겠습니다.",
 }
-_MOTIVATION = (
-    "지원 동기",
-    "지원동기",
-    "지원한 이유",
-    "지원하게 된",
-    "선택한 이유",
-    "입사 후",
-    "포부",
+# 지원 동기 / 지원한 이유 / 지원하게 된 계기 / 입사 동기 / 선택한 이유 / 포부 / 입사하고 싶은 이유
+_MOTIVATION = re.compile(
+    r"(지원|입사)\S*(\s+\S+)?\s*(동기|이유|사유|계기)|선택한 이유|입사하고 싶|포부"
 )
 
 
 def question_kind(text: str) -> str:
-    if any(w in text for w in _MOTIVATION) and "경험" not in text:
+    if _MOTIVATION.search(text) or ("입사 후" in text and "경험" not in text):
         return "motivation"
     hits = {kind: sum(w in text for w in words) for kind, words in _KIND_WORDS.items()}
     best = max(hits, key=hits.get)
@@ -325,11 +370,34 @@ def assign_episodes(kinds: list[str], episodes: list[Episode], job: Job) -> list
     return chosen
 
 
+_TITLE_NOISE = re.compile(
+    r"\[[^\]]*\]|\([^)]*\)|\d{2,4}년도?|[상하]반기|제?\s*\d+\s*차|신입사원|신입직원|신입|"
+    r"경력직?|정규직|공개채용|공채|채용공고|채용|공고|모집|체험형|채용형|청년인턴|인턴|및|[~/·,|-]"
+)
+
+
 def _role(job: Job) -> str:
-    """A short name for the position, or '지원 직무' when the title is a long notice."""
-    title = re.sub(r"\[[^\]]*\]|\([^)]*\)|\d{4}년(도)?|(상|하)반기", " ", job.title)
+    """The position's name from the title, or '지원 직무' when the title is a notice.
+
+    `R&D 부문 신입사원 채용` -> `R&D 부문`;
+    `2026년도 제2차 국가철도공단 신입직원 채용공고` -> `지원 직무`.
+    """
+    title = _TITLE_NOISE.sub(" ", job.title)
+    if company := strip_legal(job.company):
+        title = title.replace(company, " ")
     title = " ".join(title.split())
-    return title if 0 < len(title) <= 20 else "지원 직무"
+    return title if 1 < len(title) <= 20 else "지원 직무"
+
+
+def _josa(word: str, with_final: str, without_final: str) -> str:
+    """The particle that fits `word`: 으로/로 (a final ㄹ takes 로), 을/를, 이/가."""
+    last = word.strip()[-1:]
+    if not ("가" <= last <= "힣"):
+        return without_final
+    final = (ord(last) - ord("가")) % 28
+    if final == 0 or (with_final == "으로" and final == 8):
+        return without_final
+    return with_final
 
 
 def _episode_answer(job: Job, episode: Episode | None, kind: str) -> str:
@@ -355,7 +423,7 @@ def _episode_answer(job: Job, episode: Episode | None, kind: str) -> str:
 def _competence(job: Job, experience: Experience) -> str:
     """A competence answer built from skills and certificates when no episode is left."""
     assets = [*experience.skills, *experience.certificates, *experience.languages]
-    have = f"저는 {', '.join(assets)}을(를) 갖추었습니다. " if assets else ""
+    have = f"저는 {', '.join(assets)} 등을 갖추고 있습니다. " if assets else ""
     return "\n".join(
         [
             f"[{_role(job)}에 필요한 역량을 준비해 왔습니다]",
@@ -369,7 +437,7 @@ def _competence(job: Job, experience: Experience) -> str:
 def _motivation(job: Job, experience: Experience) -> str:
     focus = ", ".join(job.tags[:3])
     parts = [
-        f"[{job.company}에서 {_role(job)}로 일하고 싶은 이유]",
+        f"[{job.company}에서 {(role := _role(job))}{_josa(role, '으로', '로')} 일하고 싶은 이유]",
         experience.motivation or "[작성 필요: 이 산업·직무를 택한 이유 2~3문장]",
         (f"이번 공고에서 특히 {focus} 업무에 주목했습니다. " if focus else "")
         + f"[확인 필요: {job.company}의 최근 사업이나 인재상 한 가지와 제 경험의 연결]",
@@ -384,7 +452,7 @@ def fit(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
     head = text[:limit]
-    cuts = [m.start() for m in _SENTENCE_END.finditer(head)] + [
+    cuts = [m.end() - 1 for m in _SENTENCE_END.finditer(head)] + [
         i for i, ch in enumerate(head) if ch == "\n"
     ]
     cut = max((c for c in cuts if c >= limit // 2), default=limit)

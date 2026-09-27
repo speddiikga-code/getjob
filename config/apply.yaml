@@ -13,9 +13,12 @@ focus:
     - name: 2027학년도 편입 모집요강 발표
       date: 2026-11-30
       source: https://iphak.khu.ac.kr/detail.do?board_seq=17959&categoryid=4&menuurl=cRn%2FaEwx6apTQh9HEMyZTw%3D%3D&pageNo=1&userpwd=
-    - {name: 원서 접수, date: 2026-12-07, source: &y2026 "https://kr.object.gov-ncloudstorage.com/khuiphakstorage/upload/20251203103243375_2026%ED%95%99%EB%85%84%EB%8F%84%20%EA%B2%BD%ED%9D%AC%EB%8C%80%ED%95%99%EA%B5%90%20%ED%8E%B8%EC%9E%85%ED%95%99%20%EB%AA%A8%EC%A7%91%EC%9A%94%EA%B0%95.pdf"}
+    - {name: 원서 접수 시작, date: 2026-12-07, source: &y2026 "https://kr.object.gov-ncloudstorage.com/khuiphakstorage/upload/20251203103243375_2026%ED%95%99%EB%85%84%EB%8F%84%20%EA%B2%BD%ED%9D%AC%EB%8C%80%ED%95%99%EA%B5%90%20%ED%8E%B8%EC%9E%85%ED%95%99%20%EB%AA%A8%EC%A7%91%EC%9A%94%EA%B0%95.pdf"}
+    - {name: 원서 접수 마감 17시, date: 2026-12-09, source: *y2026}
+    - {name: 서류 제출 마감 17시, date: 2026-12-11, source: *y2026}
     - {name: 1단계 영어 필답, date: 2026-12-26, source: *y2026}
     - {name: 1단계 발표, date: 2027-01-06, source: *y2026}
+    - {name: 1단계 합격자 서류·2단계 전형료 마감 15시, date: 2027-01-08, source: *y2026}
     - {name: 2단계 면접, date: 2027-01-16, source: *y2026}
     - {name: 최종 발표, date: 2027-01-22, source: *y2026}
   # 이 기간에는 새 공고를 고르거나 초안을 만들지 않는다 (이미 낸 전형 추적은 계속).
@@ -34,17 +37,25 @@ target:
   keywords:
     신입사원: 2
     신입직원: 2
+    신규직원: 2
+    신입행원: 2
+    신입채용: 2
+    신입 채용: 2
+    공개채용: 2
     공채: 2
     대졸: 1
     채용형: 1        # 채용형 인턴 (정규직 전환)
+    채용연계형: 1
+    전환형: 1
     정규직: 1
     체험형: -1
   # 제목에 이 단어가 있으면 고르지 않는다 (검색 프로필의 제외어에 더해).
-  exclude_keywords: [배송, 택배, 운전, 조리, 요리사, 주방, 바리스타, 서빙, 헤드헌터, 파트타임, 매장]
+  exclude_keywords: [배송, 택배, 운전, 조리, 요리사, 주방, 바리스타, 서빙, 헤드헌터, 파트타임,
+                     기간제, 매장직원, 매장관리, 판매직]
   companies:
     prefer: {}       # {회사 이름 일부: 점수}, 예: {한국전력: 4, 삼성: 4}
     exclude: []
-  sources: {alio: 2, peoplenjob: 1}   # 공공기관·외국계 가산점
+  sources: {alio: 1, peoplenjob: 1}   # 공공기관·외국계 가산점 (이것만으로는 min_score 미달)
   min_score: 2       # 이 점수 미만은 고르지 않는다
   min_days_left: 3   # 마감까지 이보다 적게 남은 공고는 초안을 만들지 않는다
   lookback_days: 14  # 최근 N일 안에 처음 수집된 공고만 고른다
@@ -60,5 +71,6 @@ questions:
 
 drafting:
   # auto: ANTHROPIC_API_KEY가 있으면 Claude, 없으면 오프라인 템플릿 (+ 붙여 넣을 prompt.md)
+  # Claude 초안이 실패하면(API 오류 등) 그 공고는 템플릿 초안으로 대신 만든다.
   engine: auto
-  model: claude-opus-5
+  model: claude-opus-5   # adaptive thinking을 지원하는 모델 (claude-opus-5, claude-sonnet-5 등)

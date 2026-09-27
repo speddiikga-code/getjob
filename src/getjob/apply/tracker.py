@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
 
+from getjob import clock
 from getjob.apply.shortlist import Candidate
 from getjob.deadline import Deadline, parse_deadline
 
@@ -86,7 +87,7 @@ COLUMNS = (
 
 
 class Tracker:
-    def __init__(self, path: Path, clock: Callable[[], datetime] = datetime.now) -> None:
+    def __init__(self, path: Path, clock: Callable[[], datetime] = clock.now) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         self.db = sqlite3.connect(path)
         self.db.executescript(SCHEMA)
@@ -169,8 +170,10 @@ class Tracker:
         now = self._now()
         with self.db:
             self.db.execute(
-                "UPDATE applications SET status = 'drafted', folder = ?, "
-                "drafted_at = COALESCE(drafted_at, ?), updated_at = ? WHERE id = ?",
+                # Re-drafting an application already submitted keeps its status.
+                "UPDATE applications SET status = CASE WHEN status IN "
+                "('queued', 'drafted', 'skipped', 'expired') THEN 'drafted' ELSE status END, "
+                "folder = ?, drafted_at = COALESCE(drafted_at, ?), updated_at = ? WHERE id = ?",
                 (str(folder), now, now, app_id),
             )
 
@@ -188,12 +191,14 @@ class Tracker:
         with self.db:
             self.db.execute(
                 "UPDATE applications SET status = ?, stage = COALESCE(?, stage), "
-                "next_date = ?, note = COALESCE(?, note), updated_at = ?, "
+                "next_date = CASE WHEN ? = 'next' THEN COALESCE(?, next_date) ELSE NULL END, "
+                "note = COALESCE(?, note), updated_at = ?, "
                 "submitted_at = CASE WHEN ? IN ('submitted', 'next') "
                 "THEN COALESCE(submitted_at, ?) ELSE submitted_at END WHERE id = ?",
                 (
                     status,
                     stage,
+                    status,
                     next_date.isoformat() if next_date else None,
                     note,
                     now,

@@ -2,13 +2,13 @@
 
 import argparse
 import sys
-from datetime import date, datetime
+from datetime import date
 from pathlib import Path
 
 import yaml
 from pydantic import ValidationError
 
-from getjob import __version__, collect, notify
+from getjob import __version__, clock, collect, notify
 from getjob.apply import brief, drafter, pipeline
 from getjob.apply.config import load_apply_profile, load_experience
 from getjob.apply.tracker import ACTIVE, MANUAL, STATUSES, Tracker
@@ -105,7 +105,7 @@ def cmd_collect(args, settings: Settings) -> int:
     limit = None if args.all else (args.limit or profile.limits.max_per_source)
     csv_path = None
     if args.csv == "auto":
-        stamp = datetime.now().strftime("%Y%m%d_%H%M")
+        stamp = clock.now().strftime("%Y%m%d_%H%M")
         csv_path = settings.db_path.parent / f"new_jobs_{stamp}.csv"
     elif args.csv:
         csv_path = Path(args.csv)
@@ -114,7 +114,7 @@ def cmd_collect(args, settings: Settings) -> int:
 
 def cmd_shortlist(args, settings: Settings) -> int:
     profile = load_apply_profile(settings.apply_path)
-    today = date.today()
+    today = clock.today()
     store, tracker = Store(settings.db_path), Tracker(settings.db_path)
     try:
         found = pipeline.candidates(store, tracker, profile, today)
@@ -135,8 +135,13 @@ def cmd_shortlist(args, settings: Settings) -> int:
 def cmd_draft(args, settings: Settings) -> int:
     profile = load_apply_profile(settings.apply_path)
     experience = load_experience(settings.experience_path)
-    engine = _engine(args.engine or profile.drafting.engine, settings)
+    choice = args.engine or profile.drafting.engine
+    engine = drafter.resolve_engine(choice, settings.anthropic_key)
     if engine is None:
+        print(
+            "The Claude engine needs ANTHROPIC_API_KEY in .env and: pip install 'getjob[ai]'",
+            file=sys.stderr,
+        )
         return 1
     store, tracker = Store(settings.db_path), Tracker(settings.db_path)
     try:
@@ -147,9 +152,10 @@ def cmd_draft(args, settings: Settings) -> int:
             experience,
             engine,
             settings.applications_dir,
-            date.today(),
+            clock.today(),
             ids=args.ids,
             api_key=settings.anthropic_key,
+            fallback=choice == "auto",  # a failed Claude draft becomes a template draft
         )
     finally:
         store.close()
@@ -157,7 +163,7 @@ def cmd_draft(args, settings: Settings) -> int:
 
 
 def cmd_apps(args, settings: Settings) -> int:
-    today = date.today()
+    today = clock.today()
     tracker = Tracker(settings.db_path)
     try:
         apps = tracker.find(None if args.all else ACTIVE)
@@ -197,7 +203,11 @@ def cmd_run(args, settings: Settings) -> int:
     limit = args.limit or profile.limits.max_per_source
     codes = [collect.run(settings, profile, profile.enabled_sources(), limit, show=10)]
     print("\n[Drafts]")
-    codes.append(cmd_draft(argparse.Namespace(ids=None, engine=None), settings))
+    try:
+        codes.append(cmd_draft(argparse.Namespace(ids=None, engine=None), settings))
+    except Exception as e:  # the brief must go out even when drafting breaks
+        print(f"  FAIL  drafting stopped: {type(e).__name__}: {e}", file=sys.stderr)
+        codes.append(1)
     print("\n[Brief]")
     codes.append(_brief(settings, args.send))
     return max(codes)
@@ -207,7 +217,7 @@ def _brief(settings: Settings, send: bool) -> int:
     profile = load_apply_profile(settings.apply_path)
     tracker = Tracker(settings.db_path)
     try:
-        subject, text = brief.build(tracker, profile, date.today())
+        subject, text = brief.build(tracker, profile, clock.today())
     finally:
         tracker.close()
     print(f"{subject}\n\n{text}")
@@ -218,20 +228,6 @@ def _brief(settings: Settings, send: bool) -> int:
     for p in problems:
         print(f"  WARN  {p}", file=sys.stderr)
     return 1 if problems and len(problems) == len(channels) else 0
-
-
-def _engine(choice: str, settings: Settings) -> str | None:
-    if choice == "template":
-        return "template"
-    if drafter.claude_available(settings.anthropic_key):
-        return "claude"
-    if choice == "auto":
-        return "template"
-    print(
-        "The Claude engine needs ANTHROPIC_API_KEY in .env and: pip install 'getjob[ai]'",
-        file=sys.stderr,
-    )
-    return None
 
 
 COMMANDS = {

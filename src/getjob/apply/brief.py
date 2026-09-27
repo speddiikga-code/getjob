@@ -38,12 +38,9 @@ def build(tracker: Tracker, profile: ApplyProfile, today: date) -> tuple[str, st
         if len(ready) > SHOW:
             lines.append(f"  외 {len(ready) - SHOW}건 — getjob apps")
 
+    nexts = tracker.find(("next",))
     upcoming = sorted(
-        (
-            a
-            for a in tracker.find(("next",))
-            if a.next_date and 0 <= (a.next_date - today).days <= NEXT_STAGE_DAYS
-        ),
+        (a for a in nexts if a.next_date and 0 <= (a.next_date - today).days <= NEXT_STAGE_DAYS),
         key=lambda a: a.next_date,
     )
     if upcoming:
@@ -55,11 +52,23 @@ def build(tracker: Tracker, profile: ApplyProfile, today: date) -> tuple[str, st
                 f"{_md(app.next_date)}({weekday}) {_dday(app.next_date, today)}"
             )
 
+    # No date yet ('일정 추후 안내'), a date that passed, or one more than 3 weeks out.
+    unscheduled = [a for a in nexts if a not in upcoming]
+    if unscheduled:
+        lines += ["", f"다음 전형 일정 확인 필요 {len(unscheduled)}건 — 날짜가 나오면 getjob mark"]
+        lines += [f"  #{a.id} {a.company} {a.stage or '다음 전형'}" for a in unscheduled[:SHOW]]
+
+    failed = tracker.find(("queued",))
+    if failed:
+        lines += ["", f"초안을 못 만든 공고 {len(failed)}건 — getjob draft 로 다시 시도"]
+
     waiting = tracker.find(("submitted",))
     if waiting:
         lines += ["", f"결과 대기 {len(waiting)}건"]
-    if not (ready or upcoming or waiting):
-        lines += ["", "처리할 회사 지원이 없습니다. 새 공고는 다음 실행 때 자동으로 고릅니다."]
+    if not (ready or nexts or failed or waiting):
+        lines += ["", "처리할 회사 지원이 없습니다."]
+        if not quiet and tracker.capacity(cap, today) > 0:
+            lines[-1] += " 새 공고는 다음 실행 때 자동으로 고릅니다."
 
     subject = f"[getjob] {_md(today)} 제출 대기 {len(ready)}건"
     if upcoming:

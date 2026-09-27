@@ -10,6 +10,7 @@ import re
 from dataclasses import dataclass
 from datetime import timedelta
 
+from getjob import clock
 from getjob.collectors.base import parse_date
 
 _ROLLING = ("상시", "채용시", "수시", "충원시", "마감시")
@@ -40,7 +41,7 @@ class Deadline:
 
 
 def parse_deadline(raw: str | None, today: dt.date | None = None) -> Deadline:
-    today = today or dt.date.today()
+    today = today or clock.today()
     raw = (raw or "").strip()
     if not raw:
         return Deadline(raw)
@@ -63,11 +64,12 @@ def parse_deadline(raw: str | None, today: dt.date | None = None) -> Deadline:
 
 
 def _upcoming(month: int, day: int, today: dt.date) -> dt.date | None:
-    """A deadline written without a year: this year, or next year if long past."""
-    this_year = _safe_date(today.year, month, day)
-    if this_year and this_year < today - _PAST_TOLERANCE:
-        return _safe_date(today.year + 1, month, day)
-    return this_year
+    """A deadline written without a year: the earliest such date not long past.
+
+    `~12/28` read on 1/5 is last December's (closed); `~01/05` read on 12/20 is next January's.
+    """
+    candidates = (_safe_date(today.year + i, month, day) for i in (-1, 0, 1))
+    return next((d for d in candidates if d and d >= today - _PAST_TOLERANCE), None)
 
 
 def _safe_date(year: int, month: int, day: int) -> dt.date | None:

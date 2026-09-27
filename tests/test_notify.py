@@ -1,10 +1,12 @@
 """Sending the brief, and the CLI commands around applications — no network."""
 
 import smtplib
+import ssl
 
 import httpx
 
 from getjob import cli, notify
+from getjob.apply import drafter
 from getjob.settings import Settings
 
 
@@ -57,7 +59,9 @@ def test_email(tmp_path, monkeypatch):
         def __exit__(self, *exc):
             return False
 
-        def starttls(self):
+        def starttls(self, context=None):
+            # The server certificate must be verified, or a MITM could read the password.
+            assert context.verify_mode == ssl.CERT_REQUIRED and context.check_hostname
             log.append(("starttls",))
 
         def login(self, user, password):
@@ -92,6 +96,35 @@ def test_cli_apps_mark_and_brief(tmp_path, monkeypatch, capsys):
 
 def test_cli_draft_refuses_the_claude_engine_without_a_key(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("GETJOB_DB_PATH", str(tmp_path / "jobs.db"))
-    monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.setattr(drafter, "claude_available", lambda key: False)  # even with a .env key
     assert cli.main(["draft", "--engine", "claude"]) == 1
     assert "ANTHROPIC_API_KEY" in capsys.readouterr().err
+
+
+def test_run_sends_the_brief_even_when_drafting_breaks(tmp_path, monkeypatch, capsys):
+    monkeypatch.setenv("GETJOB_DB_PATH", str(tmp_path / "jobs.db"))
+    monkeypatch.setattr(cli.collect, "run", lambda *a, **kw: 0)
+
+    def broken(args, settings):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(cli, "cmd_draft", broken)
+    assert cli.main(["run"]) == 1
+    captured = capsys.readouterr()
+    assert "drafting stopped: RuntimeError: disk full" in captured.err
+    assert "[Brief]" in captured.out and "주 파일럿:" in captured.out
+
+
+def test_doctor_fails_when_claude_is_required_but_missing(tmp_path, monkeypatch):
+    import io
+
+    from getjob.doctor import Doctor
+
+    apply = tmp_path / "apply.yaml"
+    apply.write_text("drafting: {engine: claude}\n", encoding="utf-8")
+    monkeypatch.setattr("getjob.doctor.claude_available", lambda key: False)
+    monkeypatch.setattr(drafter, "claude_available", lambda key: False)
+    s = settings(tmp_path, apply_path=apply)
+    out = io.StringIO()
+    assert Doctor(s, out=out).run(offline=True) == 1
+    assert "drafting.engine is 'claude'" in out.getvalue()

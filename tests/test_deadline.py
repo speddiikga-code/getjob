@@ -56,3 +56,16 @@ def test_label():
     assert parse_deadline("오늘마감", TODAY).label(TODAY) == "09/27(일) D-day"
     assert parse_deadline("2026-09-20", TODAY).label(TODAY) == "09/20(일) 마감"
     assert parse_deadline("2026-09-20", TODAY).days_left(TODAY) == -7
+
+
+def test_a_december_deadline_read_in_january_is_last_december():
+    assert parse_deadline("~12/28", date(2027, 1, 5)).date == date(2026, 12, 28)
+
+
+def test_clock_is_korean_time():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from getjob import clock
+
+    assert abs(clock.now() - datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)).seconds < 5

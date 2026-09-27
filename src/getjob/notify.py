@@ -1,6 +1,7 @@
 """Send a message to the channels in `notify.channels` (Telegram, email)."""
 
 import smtplib
+import ssl
 from email.message import EmailMessage
 
 import httpx
@@ -50,12 +51,15 @@ def send_email(settings: Settings, subject: str, text: str) -> None:
     msg["To"] = settings.notify_email_to
     msg.set_content(text)
     password = settings.smtp_password.get_secret_value()
+    tls = ssl.create_default_context()  # verify the server's certificate before logging in
     if settings.smtp_port == 465:
-        with smtplib.SMTP_SSL(settings.smtp_host, settings.smtp_port, timeout=30) as smtp:
+        with smtplib.SMTP_SSL(
+            settings.smtp_host, settings.smtp_port, timeout=30, context=tls
+        ) as smtp:
             smtp.login(settings.smtp_user, password)
             smtp.send_message(msg)
     else:
         with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=30) as smtp:
-            smtp.starttls()
+            smtp.starttls(context=tls)
             smtp.login(settings.smtp_user, password)
             smtp.send_message(msg)

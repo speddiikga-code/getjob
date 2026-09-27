@@ -75,7 +75,7 @@ class Target(_Strict):
 
 class QuestionSpec(_Strict):
     text: str
-    limit: int = Field(700, ge=50, le=5000)  # characters incl. spaces (공백 포함)
+    limit: int = Field(700, ge=10, le=5000)  # characters incl. spaces (공백 포함)
 
 
 class Drafting(_Strict):

@@ -55,14 +55,19 @@ def draft_one(
     today: date,
     api_key: str | None = None,
     client=None,
+    fallback: bool = False,
 ) -> Outcome:
+    """Draft one application. With `fallback`, a failed Claude draft becomes a template draft."""
     job = store.get(app.job_key) or Job(
         app.source, app.job_key.split(":", 1)[-1], app.title, app.company, app.url
     )
     folder = Path(app.folder) if app.folder else out_dir / drafter.folder_name(app.id, app.company)
     questions_path = folder / drafter.QUESTIONS_FILE
     if questions_path.exists():
-        questions = drafter.parse_questions(questions_path.read_text(encoding="utf-8"))
+        try:
+            questions = drafter.parse_questions(questions_path.read_text(encoding="utf-8"))
+        except ValueError as e:  # e.g. a limit outside 10-5000 characters
+            return Outcome(app, folder, engine, error=f"{questions_path}: {e}")
     else:
         questions = list(profile.questions)
     if not questions:
@@ -77,7 +82,10 @@ def draft_one(
         else:
             draft = drafter.draft_with_template(job, questions, experience)
     except drafter.DraftError as e:
-        return Outcome(app, folder, engine, error=str(e))
+        if not fallback:
+            return Outcome(app, folder, engine, error=str(e))
+        draft = drafter.draft_with_template(job, questions, experience)
+        draft.todo.insert(0, f"Claude 초안 실패로 템플릿 초안입니다 ({e})")
 
     others = [a.company for a in tracker.find() if a.id != app.id]
     warnings = draft.warnings(app.company, others)
@@ -89,6 +97,9 @@ def draft_one(
     }
     if not questions_path.exists():
         files[drafter.QUESTIONS_FILE] = drafter.format_questions(questions, app.id)
+    previous = folder / drafter.DRAFT_FILE
+    if previous.exists():  # keep your edits from the last version
+        previous.replace(folder / drafter.PREVIOUS_DRAFT_FILE)
     drafter.write_package(folder, files)
     tracker.set_drafted(app.id, folder)
     return Outcome(app, folder, draft.engine, warnings)
@@ -105,14 +116,19 @@ def run(
     ids: list[int] | None = None,
     api_key: str | None = None,
     client=None,
-    out: TextIO = sys.stdout,
+    fallback: bool = False,
+    out: TextIO | None = None,
+    err: TextIO | None = None,
 ) -> int:
+    out, err = out or sys.stdout, err or sys.stderr
     expired = tracker.expire(today)
+    problems = False
     if ids:
         apps = [app for i in ids if (app := tracker.get(i))]
         missing = sorted(set(ids) - {a.id for a in apps})
         if missing:
-            print(f"No application with id {', '.join(map(str, missing))}", file=out)
+            problems = True
+            print(f"No application with id {', '.join(map(str, missing))}", file=err)
     else:
         quiet = profile.focus.quiet_period(today)
         queued = plan(store, tracker, profile, today)
@@ -123,7 +139,19 @@ def run(
         apps = tracker.find(("queued",))
 
     outcomes = [
-        draft_one(app, store, tracker, profile, experience, engine, out_dir, today, api_key, client)
+        draft_one(
+            app,
+            store,
+            tracker,
+            profile,
+            experience,
+            engine,
+            out_dir,
+            today,
+            api_key,
+            client,
+            fallback,
+        )
         for app in apps
     ]
     for o in outcomes:
@@ -136,4 +164,4 @@ def run(
             print(f"      - {w}", file=out)
     if expired:
         print(f"마감이 지난 초안 {len(expired)}건을 정리했습니다.", file=out)
-    return 1 if any(o.error for o in outcomes) else 0
+    return 1 if problems or any(o.error for o in outcomes) else 0

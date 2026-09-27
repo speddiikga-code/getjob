@@ -99,7 +99,8 @@ collect ──▶ shortlist ──▶ draft ──▶ you review & submit ──
    (`drafting.model`, default `claude-opus-5`) write the drafts. Without a key, the offline
    template engine assembles them from your experience bank, and every package includes
    `prompt.md` to paste into the Claude app instead. With a key, your experience bank and
-   the posting are sent to the Claude API.
+   the posting are sent to the Claude API. With `engine: auto`, a posting whose Claude draft
+   fails (network, key, refusal) gets a template draft instead, noted in its checklist.
 
 `getjob doctor` shows whether the experience bank and the Claude engine are ready.
 
@@ -111,7 +112,8 @@ collect ──▶ shortlist ──▶ draft ──▶ you review & submit ──
   (over/under the character limit, unfilled `[확인 필요]`, another company's name left in the
   text, attachments), then each answer with its 공백 포함 / 공백 제외 character counts
 - `questions.txt` — the questions used; replace them with the company's real ones and run
-  `getjob draft --id 12`
+  `getjob draft --id 12` (the previous draft is kept as `자기소개서.prev.md`; an application
+  already submitted keeps its status)
 - `prompt.md` — the full prompt, for the Claude app
 
 ### The weekly budget and the main pilot
@@ -128,9 +130,12 @@ collect ──▶ shortlist ──▶ draft ──▶ you review & submit ──
 On a machine with a Korean IP (see below), twice a day:
 
 ```cron
-# 08:00 and 18:00 KST
+CRON_TZ=Asia/Seoul
 0 8,18 * * * cd ~/getjob && .venv/bin/getjob run --send >> data/run.log 2>&1
 ```
+
+Dates (deadlines, D-days, budget weeks) are always computed in Korean time, even on a
+server or Docker image that runs in UTC. If drafting fails, `run` still sends the brief.
 
 The brief goes to `notify.channels` in `config/search.yaml`. Its subject starts with `[getjob]`,
 so a mail filter or another assistant can pick it up.
