@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "getjob"
 version = "0.1.0"
-description = "Automated regular-job (정규직) search in Seoul across LinkedIn and Korean job sites"
+description = "Automated 신입 정규직 job search in Seoul, with 자기소개서 drafts and an application tracker"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -20,6 +20,8 @@ dependencies = [
 [project.optional-dependencies]
 # Headless browser for JavaScript-rendered pages; only needed by some sources.
 browser = ["playwright>=1.44"]
+# Claude-written 자기소개서 drafts (`drafting.engine` in config/apply.yaml); needs ANTHROPIC_API_KEY.
+ai = ["anthropic>=1.8"]
 dev = ["pytest>=8.0", "ruff>=0.5"]
 
 [project.scripts]

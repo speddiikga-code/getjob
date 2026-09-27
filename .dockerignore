@@ -3,6 +3,7 @@
 .claude
 .venv
 .env
+config/experience.yaml
 data
 tests
 **/__pycache__
