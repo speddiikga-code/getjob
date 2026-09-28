@@ -60,7 +60,7 @@ getjob collect --csv                # later runs: only the newest postings, stop
 |--------|---------|
 | `--source saramin` | only this site (repeatable) |
 | `--limit 100` | newest postings to read per site (default: `limits.max_per_source`, 300) |
-| `--all` | no limit — every posting on every site |
+| `--all` | no limit — every posting on every site, including past ones already seen |
 | `--csv [path]` | save new postings to a CSV (Excel-friendly); default `data/new_jobs_<time>.csv` |
 | `--show 20` | how many new postings to print (default 50) |
 

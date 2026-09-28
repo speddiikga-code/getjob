@@ -645,3 +645,11 @@ def test_fit_only_cuts_after_real_punctuation():
     # '다음 ' looks like a sentence ending in 다/음 but is not one.
     text = "첫 문장은 여기서 끝납니다. 그 다음 이야기가 아주 길게 이어지는 중"
     assert drafter.fit(text, 30) == "첫 문장은 여기서 끝납니다."
+
+
+def test_company_points_match_whole_names():
+    target = make_profile(
+        target={"companies": {"prefer": {"LG": 3}}, "keywords": {"영업": 1}, "min_score": 1}
+    ).target
+    assert score(job(title="해외영업", company="LG유플러스"), target, MONDAY).score == 4
+    assert score(job(title="해외영업", company="EarlGrid Inc."), target, MONDAY).score == 1

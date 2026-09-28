@@ -69,3 +69,8 @@ def test_clock_is_korean_time():
     from getjob import clock
 
     assert abs(clock.now() - datetime.now(ZoneInfo("Asia/Seoul")).replace(tzinfo=None)).seconds < 5
+
+
+def test_far_off_dates_mean_open_until_filled():
+    deadline = parse_deadline("2070-01-01", TODAY)  # 잡코리아's 상시채용
+    assert deadline.rolling and deadline.date is None

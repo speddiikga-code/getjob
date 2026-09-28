@@ -1,6 +1,7 @@
 # Secrets and personal data (this repository is public)
 .env
 config/experience.yaml
+config/*.local.yaml
 
 # Python
 __pycache__/

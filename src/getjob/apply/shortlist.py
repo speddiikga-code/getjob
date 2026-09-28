@@ -5,7 +5,7 @@ from datetime import date
 
 from getjob.apply.config import Target
 from getjob.deadline import Deadline, parse_deadline
-from getjob.models import Job, normalize
+from getjob.models import Job, mentions
 
 
 @dataclass
@@ -21,8 +21,8 @@ def score(job: Job, target: Target, today: date) -> Candidate | None:
     title = job.title.lower()
     if any(word.lower() in title for word in target.exclude_keywords):
         return None
-    company = normalize(job.company)
-    if any(normalize(c) and normalize(c) in company for c in target.companies.exclude):
+    # Company names match as words, so LG doesn't match EarlGrid.
+    if any(mentions(c, job.company) for c in target.companies.exclude):
         return None
     deadline = parse_deadline(job.deadline, today)
     days_left = deadline.days_left(today)
@@ -36,7 +36,7 @@ def score(job: Job, target: Target, today: date) -> Candidate | None:
             candidate.score += points
             candidate.reasons.append(f"{word} {points:+d}")
     for name, points in target.companies.prefer.items():
-        if normalize(name) and normalize(name) in company:
+        if mentions(name, job.company):
             candidate.score += points
             candidate.reasons.append(f"{name} {points:+d}")
     if points := target.sources.get(job.source):

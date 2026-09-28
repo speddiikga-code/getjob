@@ -42,10 +42,12 @@ def run(
     csv_path: Path | None = None,
     show: int = 50,
     out: TextIO = sys.stdout,
+    stop_at_known: bool = True,
 ) -> int:
     store = Store(settings.db_path)
     try:
-        known = store.known_keys()
+        # Without stopping at known postings, a deep run reads past what was already seen.
+        known = store.known_keys() if stop_at_known else set()
         with Http(settings) as http, ThreadPoolExecutor(max_workers=len(keys) or 1) as pool:
             results = list(
                 pool.map(lambda key: _collect_one(key, http, settings, profile, limit, known), keys)

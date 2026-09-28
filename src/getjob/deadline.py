@@ -19,6 +19,8 @@ _YY_MM_DD = re.compile(r"(?<!\d)(\d{2})\.(\d{1,2})\.(\d{1,2})(?!\d)")
 _MM_DD = re.compile(r"(?<!\d)(\d{1,2})\s*[./]\s*(\d{1,2})(?!\d)")
 # A month/day more than this far in the past is read as next year's date.
 _PAST_TOLERANCE = timedelta(days=60)
+# No real application deadline is this far ahead.
+_FAR = timedelta(days=730)
 
 
 @dataclass(frozen=True)
@@ -52,8 +54,8 @@ def parse_deadline(raw: str | None, today: dt.date | None = None) -> Deadline:
     if m := _D_DAY.search(raw):
         return Deadline(raw, today + timedelta(days=int(m[1] or 0)))
     if full := parse_date(raw.lstrip("~ ")):
-        # 고용24 and others use 2099-12-31 / 9999-12-31 for "until filled".
-        return Deadline(raw, rolling=True) if full.year >= 2099 else Deadline(raw, full)
+        # "Until filled" is written as a far-off date: 2070-01-01 (잡코리아), 2099-12-31 (고용24).
+        return Deadline(raw, rolling=True) if full > today + _FAR else Deadline(raw, full)
     if m := _YY_MM_DD.search(raw):
         return Deadline(raw, _safe_date(2000 + int(m[1]), int(m[2]), int(m[3])))
     if m := _MM_DD.search(raw):

@@ -44,7 +44,9 @@ def build_parser() -> argparse.ArgumentParser:
     size = run.add_mutually_exclusive_group()
     size.add_argument("--limit", type=int, help="newest postings to read per site")
     size.add_argument(
-        "--all", action="store_true", help="read every posting on every site (slow; first run)"
+        "--all",
+        action="store_true",
+        help="read every posting on every site, past ones already seen (slow)",
     )
     run.add_argument(
         "--csv",
@@ -110,7 +112,15 @@ def cmd_collect(args, settings: Settings) -> int:
         csv_path = settings.db_path.parent / f"new_jobs_{stamp}.csv"
     elif args.csv:
         csv_path = Path(args.csv)
-    return collect.run(settings, profile, keys, limit, csv_path=csv_path, show=args.show)
+    return collect.run(
+        settings,
+        profile,
+        keys,
+        limit,
+        csv_path=csv_path,
+        show=args.show,
+        stop_at_known=not args.all,
+    )
 
 
 def cmd_shortlist(args, settings: Settings) -> int:

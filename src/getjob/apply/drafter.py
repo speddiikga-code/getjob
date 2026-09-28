@@ -21,7 +21,7 @@ import yaml
 
 from getjob.apply.config import Episode, Experience, QuestionSpec
 from getjob.deadline import Deadline
-from getjob.models import Job, normalize, strip_legal
+from getjob.models import Job, mentions, normalize, strip_legal
 
 QUESTIONS_FILE = "questions.txt"
 DRAFT_FILE = "자기소개서.md"
@@ -86,20 +86,6 @@ class Draft:
         if wrong:
             out.append(f"다른 회사 이름이 들어 있음: {', '.join(wrong)}")
         return out
-
-
-def mentions(company: str, text: str) -> bool:
-    """Whether `text` names `company`. Short or Latin names must stand as a word,
-    so `LG` isn't found in `algorithm` (Korean particles may follow: `LG에서`)."""
-    core = strip_legal(company)
-    name = normalize(core)
-    if not name:
-        return False
-    if len(name) > 3 and not name.isascii():
-        return name in normalize(text)
-    words = r"\s*".join(re.escape(w) for w in core.split())
-    before = "0-9A-Za-z" if name.isascii() else "0-9A-Za-z가-힣"  # 저는LG에 still counts
-    return re.search(rf"(?<![{before}]){words}(?![0-9A-Za-z])", text, re.I) is not None
 
 
 # --- questions --------------------------------------------------------------------

@@ -144,3 +144,22 @@ def test_collect_run_reports_a_failing_site_and_continues(tmp_path, monkeypatch)
     assert code == 0
     assert "FAIL  원티드 Wanted: RuntimeError: layout changed" in out.getvalue()
     assert "[New postings: 2]" in out.getvalue()
+
+
+def test_collect_all_reads_past_postings_already_seen(tmp_path, monkeypatch):
+    collectors = []
+
+    def build(key, http, settings):
+        collectors.append(FakeCollector(pages(3, 3, 3)))
+        return collectors[-1]
+
+    monkeypatch.setattr(collect, "build_collector", build)
+    settings = Settings(_env_file=None, db_path=tmp_path / "jobs.db")
+    collect.run(settings, SearchProfile(), ["saramin"], 3, out=io.StringIO())
+    # A normal run stops at the first page of known postings; --all keeps going.
+    collect.run(settings, SearchProfile(), ["saramin"], None, out=io.StringIO())
+    assert collectors[-1].requested == [1]
+    out = io.StringIO()
+    collect.run(settings, SearchProfile(), ["saramin"], None, out=out, stop_at_known=False)
+    assert collectors[-1].requested == [1, 2, 3, 4]
+    assert "[New postings: 6]" in out.getvalue()
