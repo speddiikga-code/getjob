@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import traceback
 from datetime import date
 from pathlib import Path
 
@@ -207,6 +208,7 @@ def cmd_run(args, settings: Settings) -> int:
         codes.append(cmd_draft(argparse.Namespace(ids=None, engine=None), settings))
     except Exception as e:  # the brief must go out even when drafting breaks
         print(f"  FAIL  drafting stopped: {type(e).__name__}: {e}", file=sys.stderr)
+        traceback.print_exc(file=sys.stderr)
         codes.append(1)
     print("\n[Brief]")
     codes.append(_brief(settings, args.send))

@@ -6,6 +6,7 @@ from collections.abc import Callable
 from datetime import date
 from typing import ClassVar
 
+from getjob import clock
 from getjob.models import Job
 from getjob.web import Http
 
@@ -59,7 +60,7 @@ def text(node) -> str:
 
 def past_month_day(month: int, day: int, today: date | None = None) -> date | None:
     """Date of a past 'MM.DD' (no year given): this year, or last year if still ahead."""
-    today = today or date.today()
+    today = today or clock.today()
     year = today.year if (month, day) <= (today.month, today.day) else today.year - 1
     try:
         return date(year, month, day)

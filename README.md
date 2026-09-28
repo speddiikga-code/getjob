@@ -112,8 +112,8 @@ collect ──▶ shortlist ──▶ draft ──▶ you review & submit ──
   (over/under the character limit, unfilled `[확인 필요]`, another company's name left in the
   text, attachments), then each answer with its 공백 포함 / 공백 제외 character counts
 - `questions.txt` — the questions used; replace them with the company's real ones and run
-  `getjob draft --id 12` (the previous draft is kept as `자기소개서.prev.md`; an application
-  already submitted keeps its status)
+  `getjob draft --id 12` (every earlier version is kept as `자기소개서.<시각>.md`; an
+  application already submitted keeps its status)
 - `prompt.md` — the full prompt, for the Claude app
 
 ### The weekly budget and the main pilot
@@ -130,9 +130,12 @@ collect ──▶ shortlist ──▶ draft ──▶ you review & submit ──
 On a machine with a Korean IP (see below), twice a day:
 
 ```cron
-CRON_TZ=Asia/Seoul
+# 08:00 and 18:00 KST on a machine whose clock is set to Asia/Seoul
 0 8,18 * * * cd ~/getjob && .venv/bin/getjob run --send >> data/run.log 2>&1
 ```
+
+On a server in UTC use `0 23,9 * * *` instead, or `CRON_TZ=Asia/Seoul` where the cron
+supports it (cronie on Fedora/RHEL; Debian/Ubuntu cron ignores it).
 
 Dates (deadlines, D-days, budget weeks) are always computed in Korean time, even on a
 server or Docker image that runs in UTC. If drafting fails, `run` still sends the brief.

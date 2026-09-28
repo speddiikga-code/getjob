@@ -83,6 +83,38 @@ def test_email(tmp_path, monkeypatch):
     ]
 
 
+def test_email_over_ssl_verifies_the_certificate(tmp_path, monkeypatch):
+    seen = {}
+
+    class FakeSSL:
+        def __init__(self, host, port, timeout, context):
+            seen["context"] = context
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def login(self, user, password):
+            pass
+
+        def send_message(self, msg):
+            seen["sent"] = msg["Subject"]
+
+    monkeypatch.setattr(smtplib, "SMTP_SSL", FakeSSL)
+    s = settings(
+        tmp_path,
+        smtp_port=465,
+        smtp_user="me@x.com",
+        smtp_password="pw",
+        notify_email_to="me@x.com",
+    )
+    assert notify.send(s, ["email"], "subject", "text") == []
+    assert seen["sent"] == "subject"
+    assert seen["context"].verify_mode == ssl.CERT_REQUIRED and seen["context"].check_hostname
+
+
 def test_cli_apps_mark_and_brief(tmp_path, monkeypatch, capsys):
     monkeypatch.setenv("GETJOB_DB_PATH", str(tmp_path / "jobs.db"))
     assert cli.main(["apps"]) == 0
@@ -112,6 +144,7 @@ def test_run_sends_the_brief_even_when_drafting_breaks(tmp_path, monkeypatch, ca
     assert cli.main(["run"]) == 1
     captured = capsys.readouterr()
     assert "drafting stopped: RuntimeError: disk full" in captured.err
+    assert "Traceback" in captured.err  # unattended runs need the line that broke
     assert "[Brief]" in captured.out and "주 파일럿:" in captured.out
 
 

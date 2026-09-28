@@ -1,11 +1,14 @@
 """`getjob draft`: pick postings within the weekly budget, draft them, write the packages."""
 
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from typing import TextIO
 
+from pydantic import ValidationError
+
+from getjob import clock
 from getjob.apply import drafter
 from getjob.apply.config import ApplyProfile, Experience
 from getjob.apply.shortlist import Candidate, rank
@@ -19,8 +22,9 @@ class Outcome:
     app: Application
     folder: Path | None = None
     engine: str = ""
-    warnings: list[str] | None = None
+    warnings: list[str] = field(default_factory=list)
     error: str | None = None
+    fallback: str | None = None  # why Claude failed, when a template draft was made instead
 
 
 def candidates(
@@ -66,8 +70,11 @@ def draft_one(
     if questions_path.exists():
         try:
             questions = drafter.parse_questions(questions_path.read_text(encoding="utf-8"))
-        except ValueError as e:  # e.g. a limit outside 10-5000 characters
-            return Outcome(app, folder, engine, error=f"{questions_path}: {e}")
+        except ValidationError as e:  # a limit outside 10-5000 characters
+            limits = ", ".join(str(err.get("input")) for err in e.errors())
+            return Outcome(
+                app, folder, engine, error=f"{questions_path}: limit {limits} not in 10-5000자"
+            )
     else:
         questions = list(profile.questions)
     if not questions:
@@ -84,8 +91,11 @@ def draft_one(
     except drafter.DraftError as e:
         if not fallback:
             return Outcome(app, folder, engine, error=str(e))
+        failed = str(e)
         draft = drafter.draft_with_template(job, questions, experience)
         draft.todo.insert(0, f"Claude 초안 실패로 템플릿 초안입니다 ({e})")
+    else:
+        failed = None
 
     others = [a.company for a in tracker.find() if a.id != app.id]
     warnings = draft.warnings(app.company, others)
@@ -97,12 +107,21 @@ def draft_one(
     }
     if not questions_path.exists():
         files[drafter.QUESTIONS_FILE] = drafter.format_questions(questions, app.id)
-    previous = folder / drafter.DRAFT_FILE
-    if previous.exists():  # keep your edits from the last version
-        previous.replace(folder / drafter.PREVIOUS_DRAFT_FILE)
+    current = folder / drafter.DRAFT_FILE
+    if current.exists():  # keep every earlier version, with your edits in it
+        current.replace(_backup_path(folder))
     drafter.write_package(folder, files)
     tracker.set_drafted(app.id, folder)
-    return Outcome(app, folder, draft.engine, warnings)
+    return Outcome(app, folder, draft.engine, warnings, fallback=failed)
+
+
+def _backup_path(folder: Path) -> Path:
+    stamp = clock.now().strftime("%Y%m%d-%H%M%S")
+    path, n = folder / f"자기소개서.{stamp}.md", 1
+    while path.exists():
+        n += 1
+        path = folder / f"자기소개서.{stamp}-{n}.md"
+    return path
 
 
 def run(
@@ -160,7 +179,12 @@ def run(
             print(f"  FAIL{head[1:]}: {o.error}", file=out)
             continue
         print(f"{head}\n      {o.folder}  ({o.engine})", file=out)
-        for w in o.warnings or []:
+        if o.fallback:
+            print(
+                f"  WARN  #{o.app.id}: Claude failed, template draft instead: {o.fallback}",
+                file=err,
+            )
+        for w in o.warnings:
             print(f"      - {w}", file=out)
     if expired:
         print(f"마감이 지난 초안 {len(expired)}건을 정리했습니다.", file=out)

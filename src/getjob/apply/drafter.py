@@ -26,10 +26,9 @@ from getjob.models import Job, normalize, strip_legal
 QUESTIONS_FILE = "questions.txt"
 DRAFT_FILE = "자기소개서.md"
 PROMPT_FILE = "prompt.md"
-PREVIOUS_DRAFT_FILE = "자기소개서.prev.md"
 PLACEHOLDER = re.compile(r"\[(?:확인|작성) 필요[^\]]*\]")
 _TRAILING_NOTE = re.compile(r"\s*[(\[]([^()\[\]]*)[)\]]\s*$")
-_CHARS = re.compile(r"(\d+)\s*자")
+_CHARS = re.compile(r"(?<![제\d])(\d{2,5})\s*자")  # not 제3자
 _SENTENCE_END = re.compile(r"(?<=[.!?])[\"'”’)\]]*\s")
 _WORD = re.compile(r"[0-9A-Za-z가-힣+#]{2,}")
 
@@ -71,14 +70,17 @@ class Draft:
         if placeholders:
             out.append(f"[확인 필요]·[작성 필요] {placeholders}곳 채우기")
         text = " ".join(a.body for a in self.answers)
-        own = strip_legal(company)
-        if own:  # the company applied to may contain a shorter name, e.g. SK in SK하이닉스
-            text = re.sub(re.escape(own), " ", text, flags=re.IGNORECASE)
+        own, own_core = normalize(company), strip_legal(company)
+        # Where our own name holds a shorter one (SK in SK하이닉스), look only outside it;
+        # an affiliate that contains our name (카카오뱅크 vs 카카오) is searched everywhere.
+        outside_own = re.sub(re.escape(own_core), " ", text, flags=re.I) if own_core else text
         wrong = sorted(
             {
                 c
                 for c in other_companies
-                if (n := normalize(c)) and n not in normalize(company) and mentions(c, text)
+                if (n := normalize(c))
+                and n != own
+                and mentions(c, outside_own if n in own else text)
             }
         )
         if wrong:
@@ -96,9 +98,8 @@ def mentions(company: str, text: str) -> bool:
     if len(name) > 3 and not name.isascii():
         return name in normalize(text)
     words = r"\s*".join(re.escape(w) for w in core.split())
-    return (
-        re.search(rf"(?<![0-9A-Za-z가-힣]){words}(?![0-9A-Za-z])", text, re.IGNORECASE) is not None
-    )
+    before = "0-9A-Za-z" if name.isascii() else "0-9A-Za-z가-힣"  # 저는LG에 still counts
+    return re.search(rf"(?<![{before}]){words}(?![0-9A-Za-z])", text, re.I) is not None
 
 
 # --- questions --------------------------------------------------------------------
@@ -117,7 +118,8 @@ def parse_questions(text: str, default_limit: int = 700) -> list[QuestionSpec]:
             continue
         limit = default_limit
         note = _TRAILING_NOTE.search(line)
-        if note and (numbers := _CHARS.findall(note[1].replace(",", ""))):
+        numbers = _CHARS.findall(note[1].replace(",", "")) if note else []
+        if numbers and "소제목" not in note[1]:
             limit, line = max(map(int, numbers)), line[: note.start()].strip()
         questions.append(QuestionSpec(text=line, limit=limit))
     return questions
@@ -273,13 +275,14 @@ def draft_with_claude(
     text = next((b.text for b in response.content if b.type == "text"), "")
     try:
         data = json.loads(text)
-    except json.JSONDecodeError as e:
-        raise DraftError(f"Claude returned invalid JSON: {e}") from e
-    bodies = {a["index"]: a["body"].strip() for a in data.get("answers", [])}
+        bodies = {a["index"]: a["body"].strip() for a in data.get("answers", [])}
+        todo = [t for t in data.get("todo", []) if t.strip()]
+    except (json.JSONDecodeError, KeyError, TypeError, AttributeError) as e:
+        raise DraftError(f"Claude returned an unexpected answer: {e!r}") from e
     answers = [
         Answer(q, bodies.get(i, "[작성 필요: 답이 비어 있음]")) for i, q in enumerate(questions, 1)
     ]
-    return Draft("claude", answers, [t for t in data.get("todo", []) if t.strip()])
+    return Draft("claude", answers, todo)
 
 
 def _api_errors() -> tuple[type[Exception], ...]:
@@ -309,14 +312,14 @@ _BRIDGE = {
     "competence": "이렇게 쌓은 역량을 실무에 바로 적용해 빠르게 제 몫을 해내겠습니다.",
     "growth": "이 경험에서 세운 기준을 지키며 꾸준히 성장하는 구성원이 되겠습니다.",
 }
-# 지원 동기 / 지원한 이유 / 지원하게 된 계기 / 입사 동기 / 선택한 이유 / 포부 / 입사하고 싶은 이유
-_MOTIVATION = re.compile(
-    r"(지원|입사)\S*(\s+\S+)?\s*(동기|이유|사유|계기)|선택한 이유|입사하고 싶|포부"
-)
+# 지원 동기 / 지원한 이유 / 지원하게 된 계기·배경 / 입사 동기 — but not 지원자 or 입사 동기들
+_MOTIVATION = re.compile(r"(지원|입사)(?!자)\S*(\s+\S+)?\s*(동기(?!들)|이유|사유|계기|배경)")
+# Looser hints, only when the question doesn't ask for an experience
+_MOTIVATION_HINT = re.compile(r"선택한 이유|입사하고 싶|포부|입사 후")
 
 
 def question_kind(text: str) -> str:
-    if _MOTIVATION.search(text) or ("입사 후" in text and "경험" not in text):
+    if _MOTIVATION.search(text) or (_MOTIVATION_HINT.search(text) and "경험" not in text):
         return "motivation"
     hits = {kind: sum(w in text for w in words) for kind, words in _KIND_WORDS.items()}
     best = max(hits, key=hits.get)
@@ -370,9 +373,12 @@ def assign_episodes(kinds: list[str], episodes: list[Episode], job: Job) -> list
     return chosen
 
 
+# Longer words first, so 채용형 isn't read as 채용 + 형.
 _TITLE_NOISE = re.compile(
-    r"\[[^\]]*\]|\([^)]*\)|\d{2,4}년도?|[상하]반기|제?\s*\d+\s*차|신입사원|신입직원|신입|"
-    r"경력직?|정규직|공개채용|공채|채용공고|채용|공고|모집|체험형|채용형|청년인턴|인턴|및|[~/·,|-]"
+    r"\[[^\]]*\]|\([^)]*\)|\d{2,4}년도?|(?<!\d)20\d{2}(?!\d)|[상하]반기|제\s*\d+\s*차|"
+    r"\d+\s*차(?![가-힣])|신입사원|신입직원|신입행원|신규직원|신입|경력무관|경력직|경력|정규직|"
+    r"공개경쟁|공개채용|공채|채용연계형|채용전환형|채용형|채용공고|채용|공고|모집|체험형|"
+    r"청년인턴|인턴|대졸|블라인드|직원|및|[~/·,|-]"
 )
 
 
@@ -382,7 +388,7 @@ def _role(job: Job) -> str:
     `R&D 부문 신입사원 채용` -> `R&D 부문`;
     `2026년도 제2차 국가철도공단 신입직원 채용공고` -> `지원 직무`.
     """
-    title = _TITLE_NOISE.sub(" ", job.title)
+    title = _TITLE_NOISE.sub(" ", strip_legal(job.title))
     if company := strip_legal(job.company):
         title = title.replace(company, " ")
     title = " ".join(title.split())
@@ -391,10 +397,15 @@ def _role(job: Job) -> str:
 
 def _josa(word: str, with_final: str, without_final: str) -> str:
     """The particle that fits `word`: 으로/로 (a final ㄹ takes 로), 을/를, 이/가."""
-    last = word.strip()[-1:]
-    if not ("가" <= last <= "힣"):
+    last = word.strip()[-1:].lower()
+    if last.isdigit() or last.isascii():
+        # How the last character is read: 1 일, 3 삼, 6 육, 7 칠, 8 팔, 0 영 / PM 엠, BL 엘
+        final = {"1": 8, "7": 8, "8": 8, "l": 8, "3": 16, "m": 16, "6": 1, "0": 21, "n": 4}
+        final = final.get(last, 0)
+    elif "가" <= last <= "힣":
+        final = (ord(last) - ord("가")) % 28
+    else:
         return without_final
-    final = (ord(last) - ord("가")) % 28
     if final == 0 or (with_final == "으로" and final == 8):
         return without_final
     return with_final

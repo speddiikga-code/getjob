@@ -6,7 +6,6 @@ from getjob.apply.config import ApplyProfile
 from getjob.apply.tracker import Tracker
 
 SHOW = 5  # items per list; the rest is summarised as "외 N건"
-NEXT_STAGE_DAYS = 21
 
 
 def build(tracker: Tracker, profile: ApplyProfile, today: date) -> tuple[str, str]:
@@ -40,8 +39,7 @@ def build(tracker: Tracker, profile: ApplyProfile, today: date) -> tuple[str, st
 
     nexts = tracker.find(("next",))
     upcoming = sorted(
-        (a for a in nexts if a.next_date and 0 <= (a.next_date - today).days <= NEXT_STAGE_DAYS),
-        key=lambda a: a.next_date,
+        (a for a in nexts if a.next_date and a.next_date >= today), key=lambda a: a.next_date
     )
     if upcoming:
         lines += ["", "다음 전형"]
@@ -52,7 +50,7 @@ def build(tracker: Tracker, profile: ApplyProfile, today: date) -> tuple[str, st
                 f"{_md(app.next_date)}({weekday}) {_dday(app.next_date, today)}"
             )
 
-    # No date yet ('일정 추후 안내'), a date that passed, or one more than 3 weeks out.
+    # No date yet ('일정 추후 안내'), or the date passed without a result being recorded.
     unscheduled = [a for a in nexts if a not in upcoming]
     if unscheduled:
         lines += ["", f"다음 전형 일정 확인 필요 {len(unscheduled)}건 — 날짜가 나오면 getjob mark"]

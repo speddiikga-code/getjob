@@ -333,6 +333,22 @@ def test_claude_engine_request_and_answers():
     assert draft.todo == ["인재상 확인"]
 
 
+@pytest.mark.parametrize(
+    "payload", [{"answers": [{"body": "no index"}], "todo": []}, [1, 2], {"answers": "text"}]
+)
+def test_claude_engine_rejects_malformed_answers(payload):
+    posting = job()
+    with pytest.raises(drafter.DraftError, match="unexpected answer"):
+        drafter.draft_with_claude(
+            posting,
+            parse_deadline(posting.deadline, MONDAY),
+            make_profile().questions,
+            EXPERIENCE,
+            "claude-opus-5",
+            FakeClient(payload=payload),
+        )
+
+
 @pytest.mark.parametrize("stop_reason", ["refusal", "max_tokens"])
 def test_claude_engine_errors(stop_reason):
     posting = job()
@@ -441,7 +457,13 @@ def test_redrafting_keeps_a_submitted_status_and_the_previous_draft(db, tmp_path
 
     app = tracker.get(1)
     assert (app.status, app.stage, app.next_date) == ("next", "1차 면접", date(2026, 10, 5))
-    assert (folder / drafter.PREVIOUS_DRAFT_FILE).read_text(encoding="utf-8") == "내가 고친 초안"
+    # Every earlier version is kept, so re-drafting twice can't lose your edits.
+    assert (
+        pipeline.run(store, tracker, make_profile(), EXPERIENCE, "template", out_dir, MONDAY, [1])
+        == 0
+    )
+    backups = [f.read_text(encoding="utf-8") for f in folder.glob("자기소개서.*.md")]
+    assert len(backups) == 2 and "내가 고친 초안" in backups
 
 
 def test_unknown_id_fails(db, tmp_path, capsys):
@@ -453,7 +475,7 @@ def test_unknown_id_fails(db, tmp_path, capsys):
     assert "No application with id 9" in capsys.readouterr().err
 
 
-def test_api_errors_fail_one_posting_not_the_run(db, tmp_path, monkeypatch):
+def test_api_errors_fail_one_posting_not_the_run(db, tmp_path, monkeypatch, capsys):
     class Down(FakeClient):
         def _create(self, **kwargs):
             raise ConnectionError("network down")
@@ -465,8 +487,10 @@ def test_api_errors_fail_one_posting_not_the_run(db, tmp_path, monkeypatch):
     assert pipeline.run(*args, client=Down()) == 1
     assert [a.status for a in tracker.find()] == ["queued", "queued"]
     # engine: auto falls back to the template engine, so the work still reaches you.
+    capsys.readouterr()
     assert pipeline.run(*args, client=Down(), fallback=True) == 0
     assert [a.status for a in tracker.find()] == ["drafted", "drafted"]
+    assert "WARN  #1: Claude failed, template draft instead" in capsys.readouterr().err
     draft_md = (Path(tracker.get(1).folder) / drafter.DRAFT_FILE).read_text(encoding="utf-8")
     assert "Claude 초안 실패로 템플릿 초안입니다 (Claude API error (ConnectionError)" in draft_md
 
@@ -492,18 +516,19 @@ def test_real_sdk_errors_are_caught():
         )
 
 
-def test_bad_limit_in_questions_file_is_reported_per_application(db, tmp_path):
+def test_bad_limit_in_questions_file_is_reported_per_application(db, tmp_path, capsys):
     store, tracker = db
     store.add([job("1", company="(주)가나"), job("2", company="(주)다라")])
     out_dir = tmp_path / "applications"
     pipeline.run(store, tracker, make_profile(), EXPERIENCE, "template", out_dir, MONDAY)
     folder = Path(tracker.get(1).folder)
-    (folder / drafter.QUESTIONS_FILE).write_text("한 단어로 표현 (5자)\n", encoding="utf-8")
+    (folder / drafter.QUESTIONS_FILE).write_text("아주 긴 글 (6000자)\n", encoding="utf-8")
     code = pipeline.run(
         store, tracker, make_profile(), EXPERIENCE, "template", out_dir, MONDAY, [1, 2]
     )
     assert code == 1  # #1 reported, #2 still re-drafted
     assert tracker.get(2).status == "drafted"
+    assert "limit 6000 not in 10-5000자" in capsys.readouterr().out
 
 
 def test_mark_keeps_the_next_stage_date_until_the_application_leaves_that_stage(db):
@@ -514,6 +539,8 @@ def test_mark_keeps_the_next_stage_date_until_the_application_leaves_that_stage(
     assert tracker.get(app_id).next_date == date(2026, 10, 10)
     tracker.mark(app_id, "next", stage="2차 면접", next_date=date(2026, 10, 20))
     assert tracker.get(app_id).next_date == date(2026, 10, 20)
+    tracker.mark(app_id, "next", stage="최종 면접")  # date not announced yet
+    assert tracker.get(app_id).next_date is None
     tracker.mark(app_id, "rejected")
     assert tracker.get(app_id).next_date is None
 
@@ -530,6 +557,15 @@ def test_brief_shows_unscheduled_stages_and_failed_drafts(db):
     assert "처리할 회사 지원이 없습니다" not in text
 
 
+def test_brief_shows_a_known_stage_date_even_when_far_off(db):
+    _, tracker = db
+    app_id = tracker.add(candidate(job()))
+    tracker.mark(app_id, "next", stage="2단계 면접", next_date=date(2026, 10, 26))
+    _, text = brief.build(tracker, make_profile(), MONDAY)
+    assert "  #1 (주)테스트 2단계 면접 10/26(월) D-28" in text
+    assert "확인 필요" not in text
+
+
 @pytest.mark.parametrize(
     ("line", "text", "limit"),
     [
@@ -538,6 +574,8 @@ def test_brief_shows_unscheduled_stages_and_failed_drafts(db):
         ("성장 과정 (500~1000자)", "성장 과정", 1000),
         ("한 문장 소개 (30자 이내)", "한 문장 소개", 30),
         ("자유 기술 (필수)", "자유 기술 (필수)", 700),
+        ("갈등 경험 (제3자 관점 포함)", "갈등 경험 (제3자 관점 포함)", 700),
+        ("협업 경험 (소제목은 30자 이내로 작성)", "협업 경험 (소제목은 30자 이내로 작성)", 700),
     ],
 )
 def test_limit_notations(line, text, limit):
@@ -553,6 +591,11 @@ def test_company_names_are_matched_as_words():
     draft = drafter.Draft("claude", [drafter.Answer(q, "SK하이닉스의 메모리 사업에 끌렸습니다.")])
     # Applying to SK하이닉스: another application to SK must not flag the own name.
     assert not any("다른 회사" in w for w in draft.warnings("SK하이닉스", ["SK", "LG"]))
+    # ...but text left over from an affiliate's application must be caught.
+    leftover = drafter.Draft("claude", [drafter.Answer(q, "카카오뱅크에 꼭 입사하고 싶습니다.")])
+    assert "다른 회사 이름이 들어 있음: 카카오뱅크" in leftover.warnings(
+        "(주)카카오", ["카카오뱅크"]
+    )
 
 
 @pytest.mark.parametrize(
@@ -563,6 +606,11 @@ def test_company_names_are_matched_as_words():
         ("우리 회사를 선택한 이유", "motivation"),
         ("팀원에게 동기를 부여한 경험", "teamwork"),
         ("본인이 지원한 직무에 대한 이해", "competence"),
+        ("당사에 지원하게 된 배경을 기술하시오", "motivation"),
+        ("가장 어려웠던 문제를 해결한 경험과 그 방법을 선택한 이유", "challenge"),
+        ("입사 후 포부를 이루기 위해 준비한 경험", "competence"),
+        ("입사 동기들과 어떻게 협업할지", "teamwork"),
+        ("지원자께서는 팀원에게 동기를 부여한 경험", "teamwork"),
     ],
 )
 def test_question_kind_more(text, kind):
@@ -574,6 +622,9 @@ def test_role_and_particles():
         return drafter._role(job(title=title, company=company))
 
     assert role("R&D 부문 신입사원 채용") == "R&D 부문"
+    assert role("영업관리 채용형 인턴") == "영업관리"
+    assert role("2차전지 공정기술 신입사원") == "2차전지 공정기술"
+    assert role("㈜테스트 해외영업 직원 채용") == "해외영업"
     assert role("2026년도 제2차 국가철도공단 신입직원 채용공고", "국가철도공단") == "지원 직무"
     assert [drafter._josa(w, "으로", "로") for w in ("해외영업", "지원 직무", "마케팅 매니저")] == [
         "으로",
@@ -582,6 +633,7 @@ def test_role_and_particles():
     ]
     assert drafter._josa("서울", "으로", "로") == "로"  # a final ㄹ takes 로
     assert [drafter._josa(w, "을", "를") for w in ("엑셀", "자바")] == ["을", "를"]
+    assert [drafter._josa(w, "으로", "로") for w in ("PM", "2026", "IT")] == ["으로", "으로", "로"]
     draft = drafter.draft_with_template(
         job(title="해외영업 신입사원"), make_profile().questions, EXPERIENCE
     )

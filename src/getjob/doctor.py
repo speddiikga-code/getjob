@@ -144,7 +144,10 @@ class Doctor:
         )
         engine = resolve_engine(profile.drafting.engine, key)
         if engine is None:
-            self._fail("drafting.engine is 'claude' but ANTHROPIC_API_KEY or the SDK is missing")
+            self._fail(
+                "drafting.engine is 'claude' but ANTHROPIC_API_KEY or the SDK is missing "
+                "(set it in .env; pip install 'getjob[ai]')"
+            )
         else:
             self._ok(f"draft engine: {engine}")
 

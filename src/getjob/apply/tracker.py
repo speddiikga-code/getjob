@@ -190,22 +190,21 @@ class Tracker:
         now = self._now()
         with self.db:
             self.db.execute(
-                "UPDATE applications SET status = ?, stage = COALESCE(?, stage), "
-                "next_date = CASE WHEN ? = 'next' THEN COALESCE(?, next_date) ELSE NULL END, "
-                "note = COALESCE(?, note), updated_at = ?, "
-                "submitted_at = CASE WHEN ? IN ('submitted', 'next') "
-                "THEN COALESCE(submitted_at, ?) ELSE submitted_at END WHERE id = ?",
-                (
-                    status,
-                    stage,
-                    status,
-                    next_date.isoformat() if next_date else None,
-                    note,
-                    now,
-                    status,
-                    now,
-                    app_id,
-                ),
+                "UPDATE applications SET status = :status, stage = COALESCE(:stage, stage), "
+                # A new stage without a date drops the old stage's date.
+                "next_date = CASE WHEN :status != 'next' THEN NULL WHEN :day IS NOT NULL "
+                "THEN :day WHEN :stage IS NOT NULL AND :stage != stage THEN NULL "
+                "ELSE next_date END, note = COALESCE(:note, note), updated_at = :now, "
+                "submitted_at = CASE WHEN :status IN ('submitted', 'next') "
+                "THEN COALESCE(submitted_at, :now) ELSE submitted_at END WHERE id = :id",
+                {
+                    "status": status,
+                    "stage": stage,
+                    "day": next_date.isoformat() if next_date else None,
+                    "note": note,
+                    "now": now,
+                    "id": app_id,
+                },
             )
 
     def expire(self, today: date) -> list[Application]:
