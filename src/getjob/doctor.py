@@ -6,8 +6,11 @@ import unicodedata
 from typing import TextIO
 
 import httpx
+import yaml
 from pydantic import ValidationError
 
+from getjob.apply.config import load_apply_profile, load_experience
+from getjob.apply.drafter import claude_available, resolve_engine
 from getjob.profile import SearchProfile, load_profile
 from getjob.settings import Settings
 from getjob.sources import SOURCES
@@ -35,6 +38,7 @@ class Doctor:
         profile = self._check_profile()
         self._check_secrets(profile)
         self._check_storage()
+        self._check_apply()
         if not offline:
             keys = list(SOURCES) if all_sources or profile is None else profile.enabled_sources()
             self._check_sites(keys)
@@ -105,6 +109,47 @@ class Doctor:
             self._fail(f"cannot write to {db_dir}: {e}")
         else:
             self._ok(f"database directory writable: {db_dir}")
+
+    def _check_apply(self) -> None:
+        path = self.settings.apply_path
+        self._section(f"Application drafts ({path})")
+        try:
+            profile = load_apply_profile(path)
+        except FileNotFoundError:
+            self._warn(f"{path} not found - `getjob draft` needs it")
+            return
+        except (ValidationError, ValueError, yaml.YAMLError) as e:
+            self._fail(f"invalid {path}: {e}")
+            return
+        self._ok(
+            f"main pilot: {profile.focus.main or '(not set)'} · "
+            f"at most {profile.budget.max_per_week} drafts per week"
+        )
+        experience = self.settings.experience_path
+        if not experience.exists():
+            self._warn(
+                f"{experience} missing - drafts will be skeletons "
+                f"(cp config/experience.example.yaml {experience})"
+            )
+        else:
+            try:
+                bank = load_experience(experience)
+            except (ValidationError, ValueError, yaml.YAMLError) as e:
+                self._fail(f"invalid {experience}: {e}")
+            else:
+                self._ok(f"experience bank: {len(bank.episodes)} episode(s)")
+        key = self.settings.anthropic_key
+        self._status(
+            "ANTHROPIC_API_KEY + anthropic SDK (Claude drafts, optional)", claude_available(key)
+        )
+        engine = resolve_engine(profile.drafting.engine, key)
+        if engine is None:
+            self._fail(
+                "drafting.engine is 'claude' but ANTHROPIC_API_KEY or the SDK is missing "
+                "(set it in .env; pip install 'getjob[ai]')"
+            )
+        else:
+            self._ok(f"draft engine: {engine}")
 
     def _check_sites(self, keys: list[str]) -> None:
         self._section("Job sites reachable from this machine")

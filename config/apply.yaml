@@ -1,0 +1,78 @@
+# 회사 지원 자동화 / Application automation
+#
+# 주 파일럿은 경희대 한의학과 편입이다. 회사 지원은 기계가 공고 선별 → 자기소개서 초안 →
+# 제출 대기 큐까지 만들고, 사람은 아래 상한 안에서 검토하고 제출 버튼만 누른다.
+# 경력·경험은 이 파일이 아니라 config/experience.yaml(git에 올라가지 않음)에 쓴다.
+
+focus:
+  main: 경희대 한의학과 일반편입 (인문)
+  # 브리핑 첫 줄에 가장 가까운 일정이 D-day로 나온다.
+  # 날짜는 2026학년도 요강 기준 추정치. 2027학년도 요강(11월 말~12월 초 발표)이 나오면
+  # 날짜를 고치고 confirmed: true, source에 요강 URL을 넣는다.
+  milestones:
+    - name: 2027학년도 편입 모집요강 발표
+      date: 2026-11-30
+      source: https://iphak.khu.ac.kr/detail.do?board_seq=17959&categoryid=4&menuurl=cRn%2FaEwx6apTQh9HEMyZTw%3D%3D&pageNo=1&userpwd=
+    - {name: 원서 접수 시작, date: 2026-12-07, source: &y2026 "https://kr.object.gov-ncloudstorage.com/khuiphakstorage/upload/20251203103243375_2026%ED%95%99%EB%85%84%EB%8F%84%20%EA%B2%BD%ED%9D%AC%EB%8C%80%ED%95%99%EA%B5%90%20%ED%8E%B8%EC%9E%85%ED%95%99%20%EB%AA%A8%EC%A7%91%EC%9A%94%EA%B0%95.pdf"}
+    - {name: 원서 접수 마감 17시, date: 2026-12-09, source: *y2026}
+    - {name: 서류 제출 마감 17시, date: 2026-12-11, source: *y2026}
+    - {name: 1단계 영어 필답, date: 2026-12-26, source: *y2026}
+    - {name: 1단계 발표, date: 2027-01-06, source: *y2026}
+    - {name: 1단계 합격자 서류·2단계 전형료 마감 15시, date: 2027-01-08, source: *y2026}
+    - {name: 2단계 면접, date: 2027-01-16, source: *y2026}
+    - {name: 최종 발표, date: 2027-01-22, source: *y2026}
+  # 이 기간에는 새 공고를 고르거나 초안을 만들지 않는다 (이미 낸 전형 추적은 계속).
+  quiet_periods:
+    - {start: 2026-12-01, end: 2027-01-22, reason: 편입 원서·영어 필답·면접}
+
+budget:
+  # 한 주(월~일)에 새로 만드는 초안 수 = 사람이 검토·제출할 건수.
+  # 1건 약 30분 → 6건이면 주 2블록. 검토 안 한 초안이 이만큼 쌓이면 새 초안도 멈춘다.
+  max_per_week: 6
+
+target:
+  # 제목·태그에 이 단어가 있으면 점수를 더한다 ({단어: 점수}). 지원할 직무 단어를 추가하세요.
+  # 예: {해외영업: 3, 무역: 3, 마케팅: 2, 인사: 2, 경영지원: 2}
+  # 음수는 감점: 체험형 인턴만 뽑는 공고는 떨어지고, '신입직원 및 체험형'은 남는다.
+  keywords:
+    신입사원: 2
+    신입직원: 2
+    신규직원: 2
+    신입행원: 2
+    신입채용: 2
+    신입 채용: 2
+    공개채용: 2
+    공채: 2
+    대졸: 1
+    채용형: 1        # 채용형 인턴 (정규직 전환)
+    채용연계형: 1
+    전환형: 1
+    정규직: 1
+    직원 채용: 1     # 공공기관 '제2차 직원 채용' 같은 제목
+    체험형: -1
+    경력직: -2
+  # 제목에 이 단어가 있으면 고르지 않는다 (검색 프로필의 제외어에 더해).
+  exclude_keywords: [배송, 택배, 운전, 조리, 요리사, 주방, 바리스타, 서빙, 헤드헌터, 파트타임,
+                     기간제, 매장직원, 매장관리, 판매직]
+  companies:
+    prefer: {}       # {회사 이름 일부: 점수}, 예: {한국전력: 4, 삼성: 4}
+    exclude: []
+  sources: {alio: 1, peoplenjob: 1}   # 공공기관·외국계 가산점 (이것만으로는 min_score 미달)
+  min_score: 2       # 이 점수 미만은 고르지 않는다
+  min_days_left: 3   # 마감까지 이보다 적게 남은 공고는 초안을 만들지 않는다
+  lookback_days: 14  # 최근 N일 안에 처음 수집된 공고만 고른다
+
+# 회사 문항을 모를 때 쓰는 기본 문항 (limit = 공백 포함 글자 수).
+# 실제 문항은 공고마다 data/applications/<번호>_<회사>/questions.txt 를 고친 뒤
+# `getjob draft --id <번호>` 로 다시 만든다.
+questions:
+  - {text: 지원 동기와 입사 후 이루고 싶은 목표를 기술해 주십시오., limit: 700}
+  - {text: 지원 직무와 관련해 갖춘 역량과 이를 기르기 위해 노력한 경험을 기술해 주십시오., limit: 800}
+  - {text: 공동의 목표를 위해 다른 사람과 협업했던 경험과 본인의 역할을 기술해 주십시오., limit: 700}
+  - {text: 어려운 목표에 도전해 끝까지 해낸 경험을 기술해 주십시오., limit: 700}
+
+drafting:
+  # auto: ANTHROPIC_API_KEY가 있으면 Claude, 없으면 오프라인 템플릿 (+ 붙여 넣을 prompt.md)
+  # Claude 초안이 실패하면(API 오류 등) 그 공고는 템플릿 초안으로 대신 만든다.
+  engine: auto
+  model: claude-opus-5   # adaptive thinking을 지원하는 모델 (claude-opus-5, claude-sonnet-5 등)

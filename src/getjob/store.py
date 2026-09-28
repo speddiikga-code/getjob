@@ -2,9 +2,10 @@
 
 import sqlite3
 from dataclasses import asdict
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
+from getjob import clock
 from getjob.models import Job
 
 SCHEMA = """
@@ -34,6 +35,11 @@ COLUMNS = [
     "experience", "education", "employment_type", "salary", "posted_at", "deadline", "tags",
     "first_seen", "last_seen",
 ]  # fmt: skip
+# Read back in the order of Job's fields, for `_job`.
+JOB_FIELDS = (
+    "source, source_id, title, company, url, location, experience, education, "
+    "employment_type, salary, posted_at, deadline, tags"
+)
 
 
 class Store:
@@ -51,7 +57,7 @@ class Store:
         A posting already stored from another site (same company and title) is saved
         but not returned again, so the same job listed on 사람인 and 고용24 is reported once.
         """
-        now = datetime.now().isoformat(timespec="seconds")
+        now = clock.now().isoformat(timespec="seconds")
         fingerprints = {row[0] for row in self.db.execute("SELECT fingerprint FROM jobs")}
         new: list[Job] = []
         with self.db:
@@ -78,5 +84,27 @@ class Store:
                     new.append(job)
         return new
 
+    def recent(self, since: datetime) -> list[Job]:
+        """Postings first seen at or after `since`, oldest first."""
+        rows = self.db.execute(
+            f"SELECT {JOB_FIELDS} FROM jobs WHERE first_seen >= ? ORDER BY first_seen, key",
+            (since.isoformat(timespec="seconds"),),
+        )
+        return [_job(row) for row in rows]
+
+    def get(self, key: str) -> Job | None:
+        row = self.db.execute(f"SELECT {JOB_FIELDS} FROM jobs WHERE key = ?", (key,)).fetchone()
+        return _job(row) if row else None
+
     def close(self) -> None:
         self.db.close()
+
+
+def _job(row: tuple) -> Job:
+    *fields, posted_at, deadline, tags = row
+    return Job(
+        *fields,
+        posted_at=date.fromisoformat(posted_at) if posted_at else None,
+        deadline=deadline or "",
+        tags=[t for t in (tags or "").split(", ") if t],
+    )
